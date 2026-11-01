@@ -30,6 +30,11 @@ static int bitmap_id[2];
 #define LOGO_COLOURS 64
 static bool logo[2];
 
+// The picture behind the menus: drawn into the same buffers as pixel text, with
+// colours in palette entries 192 up, after the logo's.
+#define BACKDROP_PALETTE_BASE 192
+static bool backdrop[2];
+
 static u16 *map[2];
 static u16 *gfx[2];
 static u16 *palette[2];
@@ -43,19 +48,41 @@ typedef struct {
 static const Palette palettes[THEME_COUNT] = {
 	[THEME_NORMAL] = {
 		RGB15(30, 29, 25),
-		{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7) },
+		{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7), RGB15(14, 22, 8) },
 	},
 	[THEME_DARK] = {
 		RGB15(2, 5, 3),
-		{ RGB15(30, 29, 25), RGB15(15, 18, 14), RGB15(31, 10, 10), RGB15(14, 26, 12) },
+		{ RGB15(30, 29, 25), RGB15(15, 18, 14), RGB15(31, 10, 10), RGB15(14, 26, 12), RGB15(20, 26, 11) },
 	},
 	[THEME_SEPIA] = {
 		RGB15(27, 24, 18),
-		{ RGB15(7, 5, 3), RGB15(15, 12, 9), RGB15(17, 5, 4), RGB15(12, 8, 3) },
+		{ RGB15(7, 5, 3), RGB15(15, 12, 9), RGB15(17, 5, 4), RGB15(12, 8, 3), RGB15(12, 8, 3) },
+	},
+};
+
+static const u16 backdrop_colours[THEME_COUNT][BD_COUNT] = {
+	// BACK is the dark green of the logo screen and ACCENT its light green (decision 053).
+	[THEME_NORMAL] = {
+		RGB15(3, 7, 6), RGB15(30, 29, 25), RGB15(17, 20, 15), RGB15(25, 25, 21), RGB15(14, 22, 8), RGB15(28, 28, 26),
+		RGB15(31, 31, 30), RGB15(21, 22, 20), RGB15(30, 31, 27), RGB15(3, 6, 4), RGB15(15, 16, 14), RGB15(5, 16, 7),
+		RGB15(19, 20, 18),
+	},
+	[THEME_DARK] = {
+		RGB15(3, 7, 6), RGB15(2, 5, 3), RGB15(9, 14, 10), RGB15(6, 10, 7), RGB15(20, 26, 11), RGB15(8, 11, 9),
+		RGB15(13, 17, 14), RGB15(4, 6, 5), RGB15(10, 15, 10), RGB15(30, 29, 25), RGB15(13, 16, 12), RGB15(20, 26, 11),
+		RGB15(12, 17, 13),
+	},
+	[THEME_SEPIA] = {
+		RGB15(3, 7, 6), RGB15(27, 24, 18), RGB15(15, 11, 7), RGB15(23, 20, 14), RGB15(12, 8, 3), RGB15(25, 22, 17),
+		RGB15(30, 28, 23), RGB15(18, 15, 10), RGB15(28, 25, 18), RGB15(7, 5, 3), RGB15(16, 13, 10), RGB15(12, 8, 3),
+		RGB15(17, 14, 10),
 	},
 };
 
 static void apply_theme(void) {
+	for (int s = 0; s < 2; s++) {
+		for (int i = 0; i < BD_COUNT; i++) palette[s][BACKDROP_PALETTE_BASE + i] = backdrop_colours[theme][i];
+	}
 	const Palette *t = &palettes[theme];
 	for (int s = 0; s < 2; s++) {
 		for (int style = 0; style < STYLE_COUNT; style++) {
@@ -84,8 +111,11 @@ static void upload_tiles(void) {
 
 // Shows the tile layer or the bitmap layer on both screens, not both.
 static void show_layer(void) {
+	// A picture behind the text (backdrop) shows the bitmap layer and the tile text together.
 	u32 top = pixel || logo[SCREEN_TOP] ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
 	u32 bottom = pixel || logo[SCREEN_BOTTOM] ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
+	if (!pixel && backdrop[SCREEN_TOP] && !logo[SCREEN_TOP]) top |= DISPLAY_BG0_ACTIVE | DISPLAY_BG2_ACTIVE;
+	if (!pixel && backdrop[SCREEN_BOTTOM] && !logo[SCREEN_BOTTOM]) bottom |= DISPLAY_BG0_ACTIVE | DISPLAY_BG2_ACTIVE;
 	videoSetMode(MODE_5_2D | top);
 	videoSetModeSub(MODE_5_2D | bottom);
 }
@@ -108,6 +138,10 @@ void render_init(void) {
 		gfx[s] = bgGetGfxPtr(bg_id[s]);
 		bitmap[s] = bgGetGfxPtr(bitmap_id[s]);
 	}
+	for (int s = 0; s < 2; s++) { // the text is in front of the picture
+		bgSetPriority(bg_id[s], 0);
+		bgSetPriority(bitmap_id[s], 1);
+	}
 	bgUpdate(); // writes the (unscaled) transform of the bitmap layers
 	palette[SCREEN_TOP] = BG_PALETTE;
 	palette[SCREEN_BOTTOM] = BG_PALETTE_SUB;
@@ -116,6 +150,10 @@ void render_init(void) {
 }
 
 void render_clear(Screen screen) {
+	if (backdrop[screen]) {
+		backdrop[screen] = false; // a cleared screen is plain text again
+		show_layer();
+	}
 	if (pixel) {
 		memset(fb[screen], 0, sizeof fb[screen]);
 		fb_dirty[screen] = true;
@@ -127,7 +165,7 @@ void render_clear(Screen screen) {
 
 // Copies the buffer of a screen to the bitmap layer, if it changed.
 void render_present(Screen screen) {
-	if (!pixel || !fb_dirty[screen] || logo[screen]) return;
+	if (!(pixel || backdrop[screen]) || !fb_dirty[screen] || logo[screen]) return;
 	fb_dirty[screen] = false;
 
 	volatile u32 *dst = (volatile u32 *)bitmap[screen];
@@ -222,6 +260,42 @@ int render_puts_utf8_clip(Screen screen, int col, int row, const char *str, Styl
 
 int render_puts_utf8(Screen screen, int col, int row, const char *str, Style style) {
 	return render_puts_utf8_clip(screen, col, row, str, style, render_cols());
+}
+
+// ---- The picture behind the text ----
+
+void render_backdrop_begin(Screen screen) {
+	if (pixel) return; // the bitmap layer holds the page then
+	memset(fb[screen], BACKDROP_PALETTE_BASE + BD_BACK, sizeof fb[screen]);
+	fb_dirty[screen] = true;
+	backdrop[screen] = true;
+	show_layer();
+}
+
+void render_backdrop_rect(Screen screen, int x, int y, int w, int h, BackdropColour colour) {
+	if (!backdrop[screen]) return;
+	if (x < 0) { w += x; x = 0; }
+	if (y < 0) { h += y; y = 0; }
+	if (x + w > PIX_W) w = PIX_W - x;
+	if (y + h > PIX_H) h = PIX_H - y;
+	if (w <= 0 || h <= 0) return;
+	for (int row = 0; row < h; row++) memset(&fb[screen][(y + row) * PIX_W + x], BACKDROP_PALETTE_BASE + colour, (size_t)w);
+	fb_dirty[screen] = true;
+}
+
+void render_backdrop_text(Screen screen, int x, int y, const char *text, BackdropColour colour) {
+	if (!backdrop[screen] || !font) return;
+	for (; *text; text++, x += font->width) {
+		const uint8_t *bits = font->glyph[(uint8_t)*text];
+		for (int py = 0; py < font->height; py++) {
+			for (int px = 0; px < font->width; px++) {
+				if (((bits[py] >> px) & 1) && x + px >= 0 && x + px < PIX_W && y + py >= 0 && y + py < PIX_H) {
+					fb[screen][(y + py) * PIX_W + x + px] = (uint8_t)(BACKDROP_PALETTE_BASE + colour);
+				}
+			}
+		}
+	}
+	fb_dirty[screen] = true;
 }
 
 // ---- The startup logo ----

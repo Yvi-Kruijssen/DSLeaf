@@ -23,8 +23,39 @@ typedef enum {
 	STYLE_DIM,       // status line, secondary text
 	STYLE_ERROR,     // red, for " - error"
 	STYLE_HIGHLIGHT, // selected item
+	STYLE_ACCENT,    // the main menu's title and selected book (the logo's green, decision 053)
 	STYLE_COUNT,
 } Style;
+
+// ---- A picture behind the tile text (decision 053) ----
+//
+// The menus can draw simple graphics (panels, ruled lines, buttons) in the
+// bitmap layer, which shows behind the tile text. Colours are chosen from a
+// fixed set that follows the theme. Only for the tile fonts (the bitmap layer
+// is used by pixel fonts otherwise). Any render_clear of the screen removes
+// the picture again, so it is drawn after the clear.
+typedef enum {
+	BD_BACK,      // outside the panel
+	BD_PANEL,     // the page (the same as the text background)
+	BD_EDGE,      // outline of the panel
+	BD_RULE,      // thin ruled lines
+	BD_ACCENT,    // green: title line, cursor arrow, focus outline
+	BD_BTN,       // button face
+	BD_BTN_LIGHT, // lit bevel edge
+	BD_BTN_SHADE, // shaded bevel edge and outline
+	BD_BTN_FOCUS, // face of the focused button
+	BD_BTN_TEXT,  // label
+	BD_BTN_DIM,   // label of a greyed out button
+	BD_BTN_HI,    // label of the focused button
+	BD_BTN_EDGE,  // thin outline of a button
+	BD_COUNT,
+} BackdropColour;
+
+// Fills the screen with BD_BACK and shows the picture behind the text.
+void render_backdrop_begin(Screen screen);
+void render_backdrop_rect(Screen screen, int x, int y, int w, int h, BackdropColour colour);
+// Draws 8x8 text at a pixel position (not on the cell grid) in the current tile font.
+void render_backdrop_text(Screen screen, int x, int y, const char *text, BackdropColour colour);
 
 // Sets up both engines. Call once at startup.
 void render_init(void);

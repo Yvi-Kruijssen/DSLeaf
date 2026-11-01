@@ -67,15 +67,18 @@ void main_menu_invalidate(MainMenu *menu);
 // rotated. Returns true when it drew.
 bool main_menu_draw(MainMenu *menu, Screen screen);
 
-// Grid positions, shared by the logic (touch) and the drawing.
+// Positions, shared by the logic (touch) and the drawing (decision 053). The
+// book titles are tile text on the 8x8 grid, everything else is a picture in
+// pixels. Each book has a band of paper, 24 pixels high, with a ruled line.
 #define MENU_TITLE_ROW   1
-#define MENU_BOOK_ROW(i) (4 + 2 * (i))
-#define MENU_BUTTON_ROW  21
-#define MENU_OPEN_COL    1
-#define MENU_OPEN_W      8
-#define MENU_LIBRARY_COL 10
-#define MENU_LIBRARY_W   9
-#define MENU_SETTINGS_COL 20
-#define MENU_SETTINGS_W  10
+#define MENU_BOOK_ROW(i) (4 + 3 * (i))        // the text row of book i
+#define MENU_BAND_Y(i)   (24 + 24 * (i))      // top of the band of book i
+#define MENU_BAND_H      24
+#define MENU_PANEL_Y     4
+#define MENU_PANEL_H     120
+#define MENU_BUTTON_Y    144
+#define MENU_BUTTON_H    24
+#define MENU_BUTTON_W    72
+#define MENU_BUTTON_X(i) (8 + 84 * (i))       // 0 Open, 1 Library, 2 Settings
 
 #endif

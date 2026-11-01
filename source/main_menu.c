@@ -80,28 +80,28 @@ static MainMenuEvent remove_focused(MainMenu *m) {
 	return event(MENU_EVENT_REMOVE_BOOK, removed);
 }
 
-static bool in_rect(int col, int row, int c0, int w, int r0, int h) {
-	return col >= c0 && col < c0 + w && row >= r0 && row < r0 + h;
+static bool on_button(int x, int y, int i) {
+	// A few pixels more than the drawn button, so a finger does not have to be exact.
+	return x >= MENU_BUTTON_X(i) - 2 && x < MENU_BUTTON_X(i) + MENU_BUTTON_W + 2 && y >= MENU_BUTTON_Y - 4 &&
+	       y < MENU_BUTTON_Y + MENU_BUTTON_H + 4;
 }
 
 static MainMenuEvent handle_tap(MainMenu *m, int x, int y) {
-	int col = x / 8, row = y / 8;
-
 	for (int i = 0; i < m->count; i++) {
-		if (in_rect(col, row, 0, 32, MENU_BOOK_ROW(i), 2)) {
+		if (y >= MENU_BAND_Y(i) && y < MENU_BAND_Y(i) + MENU_BAND_H) {
 			set_focus(m, FOCUS_BOOK, i);
 			return event(MENU_EVENT_NONE, 0);
 		}
 	}
-	if (in_rect(col, row, MENU_OPEN_COL, MENU_OPEN_W, MENU_BUTTON_ROW - 1, 3)) {
+	if (on_button(x, y, 0)) {
 		if (m->focus == FOCUS_BOOK) start_open(m, m->book); // greyed out otherwise
 		return event(MENU_EVENT_NONE, 0);
 	}
-	if (in_rect(col, row, MENU_LIBRARY_COL, MENU_LIBRARY_W, MENU_BUTTON_ROW - 1, 3)) {
+	if (on_button(x, y, 1)) {
 		set_focus(m, FOCUS_LIBRARY, 0);
 		return event(MENU_EVENT_OPEN_LIBRARY, 0);
 	}
-	if (in_rect(col, row, MENU_SETTINGS_COL, MENU_SETTINGS_W, MENU_BUTTON_ROW - 1, 3)) {
+	if (on_button(x, y, 2)) {
 		set_focus(m, FOCUS_SETTINGS, 0);
 		return event(MENU_EVENT_OPEN_SETTINGS, 0);
 	}
