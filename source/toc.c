@@ -110,6 +110,24 @@ typedef struct {
 	int added;
 } Builder;
 
+// Appends an entry to the list, growing it. Returns false if memory is short.
+static bool push_entry(Toc *toc, const char *title, const char *anchor, int chapter, int level) {
+	if (toc->count >= toc->cap) {
+		int cap = toc->cap ? toc->cap * 2 : 64;
+		TocEntry *bigger = realloc(toc->entry, (size_t)cap * sizeof *bigger);
+		if (!bigger) return false;
+		toc->entry = bigger;
+		toc->cap = cap;
+	}
+	TocEntry *e = &toc->entry[toc->count++];
+	snprintf(e->title, sizeof e->title, "%s", title);
+	snprintf(e->anchor, sizeof e->anchor, "%s", anchor);
+	e->chapter = (uint16_t)chapter;
+	e->level = (uint8_t)level;
+	e->offset = TOC_OFFSET_UNKNOWN;
+	return true;
+}
+
 // Adds one entry from a title and a link.
 static void add_entry(Builder *b, const char *raw_title, const char *href, int level) {
 	Toc *toc = b->toc;
@@ -158,20 +176,7 @@ static void add_entry(Builder *b, const char *raw_title, const char *href, int l
 		if (last->chapter == chapter && strcmp(last->anchor, anchor) == 0 && strcmp(last->title, title) == 0) return;
 	}
 
-	if (toc->count >= toc->cap) {
-		int cap = toc->cap ? toc->cap * 2 : 64;
-		TocEntry *bigger = realloc(toc->entry, (size_t)cap * sizeof *bigger);
-		if (!bigger) return;
-		toc->entry = bigger;
-		toc->cap = cap;
-	}
-	TocEntry *e = &toc->entry[toc->count++];
-	memcpy(e->title, title, sizeof e->title);
-	memcpy(e->anchor, anchor, sizeof e->anchor);
-	e->chapter = (uint16_t)chapter;
-	e->level = (uint8_t)level;
-	e->offset = TOC_OFFSET_UNKNOWN;
-	b->added++;
+	if (push_entry(toc, title, anchor, chapter, level)) b->added++;
 }
 
 // Text collected while reading an entry's title, with white space collapsed.
@@ -329,8 +334,63 @@ static int chapter_of(void *user, const char *path) {
 	return -1;
 }
 
-bool toc_load(Toc *toc, Epub *book) {
-	memset(toc, 0, sizeof *toc);
+// ---- A table of contents made from the chapters (decision 052) ----
+//
+// For a book with no contents of its own: one entry for every chapter file that
+// has text, titled with the chapter's first heading, or "Section N" when it has
+// none. Only the start of each chapter is read.
+#define SCAN_ITEMS 400 // how far into a chapter a heading is looked for
+
+// Finds the title of a chapter. Returns false if the chapter has no text. `title`
+// is empty when it has text but no heading.
+static bool chapter_title(Epub *book, int chapter, char *title, size_t cap) {
+	static EpubChapter stream; // too big for the stack
+	title[0] = '\0';
+	if (!epub_chapter_open(book, chapter, &stream)) return false;
+
+	char raw[TOC_TITLE_MAX * 4];
+	size_t len = 0;
+	bool has_text = false, in_heading = false;
+	TextItem item;
+	for (int n = 0; n < SCAN_ITEMS && epub_chapter_next(&stream, &item); n++) {
+		if (item.kind == TEXT_BLOCK) {
+			if (in_heading) break; // the heading is over
+			if (item.block == BLOCK_HEADING) in_heading = true;
+		} else if (item.kind == TEXT_WORD) {
+			has_text = true;
+			if (in_heading && len + strlen(item.text) + 2 < sizeof raw) len += (size_t)snprintf(raw + len, sizeof raw - len, " %s", item.text);
+		} else if (item.kind == TEXT_LINEBREAK && in_heading && len + 2 < sizeof raw) {
+			raw[len++] = ' '; // a heading over two lines: "CHAPTER I" <br> "The beginning"
+		}
+	}
+	epub_chapter_close(&stream);
+	if (!has_text) return false;
+
+	raw[len] = '\0';
+	char full[TOC_TITLE_MAX * 3];
+	clean_title(full, sizeof full, raw);
+	tidy_title(full, sizeof full);
+	clean_title(title, cap, full);
+	return true;
+}
+
+static bool toc_from_chapters(Toc *toc, Epub *book) {
+	int sections = 0;
+	for (int i = 0; i < book->chapter_count && toc->count < TOC_ENTRIES_MAX; i++) {
+		char title[TOC_TITLE_MAX];
+		if (!chapter_title(book, i, title, sizeof title)) continue; // a cover, a picture page
+		if (title[0] == '\0') snprintf(title, sizeof title, "Section %d", sections + 1);
+		sections++;
+		if (!push_entry(toc, title, "", i, 0)) break;
+	}
+	if (toc->count == 0) {
+		toc_free(toc);
+		return false;
+	}
+	return true;
+}
+
+static bool toc_from_file(Toc *toc, Epub *book) {
 	if (book->toc_path[0] == '\0') return false;
 
 	ZipEntry entry;
@@ -353,6 +413,13 @@ bool toc_load(Toc *toc, Epub *book) {
 		return false;
 	}
 	return true;
+}
+
+bool toc_load(Toc *toc, Epub *book) {
+	memset(toc, 0, sizeof *toc);
+	if (toc_from_file(toc, book)) return true;
+	toc_free(toc);
+	return toc_from_chapters(toc, book); // the book has no usable contents of its own
 }
 
 bool toc_resolve(Toc *toc, Epub *book, int chapter) {

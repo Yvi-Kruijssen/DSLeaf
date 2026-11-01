@@ -45,8 +45,10 @@ typedef int (*TocLookup)(void *user, const char *zip_path);
 int toc_parse(Toc *toc, XmlReadFn read, void *source, bool is_nav, const char *base_dir, TocLookup lookup,
               void *lookup_user);
 
-// Reads the table of contents of an open book. Returns false if the book has
-// none or it holds no usable entry (`toc` is then empty). Free it with toc_free.
+// Reads the table of contents of an open book. A book without a usable one gets
+// a list made from its chapters: the first heading of each chapter that has
+// text, or "Section N" (decision 052). Returns false only if there is nothing
+// at all to list (`toc` is then empty). Free it with toc_free.
 bool toc_load(Toc *toc, Epub *book);
 void toc_free(Toc *toc);
 
