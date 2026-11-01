@@ -1,5 +1,6 @@
 #include "main_menu.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "input.h"
@@ -139,3 +140,11 @@ MainMenuEvent main_menu_update(MainMenu *m, uint32_t actions, bool tapped, int t
 }
 
 void main_menu_invalidate(MainMenu *m) { m->redraw = true; }
+
+void main_menu_set_notice(MainMenu *m, const char *text) {
+	char next[sizeof m->notice] = "";
+	if (text) snprintf(next, sizeof next, "%s", text);
+	if (strcmp(next, m->notice) == 0) return;
+	memcpy(m->notice, next, sizeof next);
+	m->redraw = true;
+}

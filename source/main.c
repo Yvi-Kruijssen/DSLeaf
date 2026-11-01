@@ -1,6 +1,4 @@
-// Main menu and Library backed by the SD card. Settings and the reader are not
-// built yet, so opening a book only reports what would happen. Replaced by the
-// real app as it is built.
+// DSLeaf: the startup logo, then the main menu, Library, Settings and the reader.
 #include <nds.h>
 #include <stdio.h>
 
@@ -16,6 +14,7 @@
 #include "recent.h"
 #include "render.h"
 #include "settings.h"
+#include "startup.h"
 #include "storage.h"
 
 typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS } AppScreen;
@@ -40,28 +39,27 @@ static AppScreen current = SCREEN_MAIN_MENU;
 static bool box_visible;
 static bool save_failed;
 
-// Placeholder top screen. The real one shows the logo.
-static void report(const char *line1, const char *line2) {
-	render_clear(SCREEN_TOP);
-	render_puts(SCREEN_TOP, 1, 1, "DSLeaf", STYLE_HIGHLIGHT);
-	render_puts_utf8_clip(SCREEN_TOP, 1, 4, line1, STYLE_NORMAL, 31);
-	render_puts_utf8_clip(SCREEN_TOP, 1, 5, line2, STYLE_NORMAL, 31);
+// The warning on the main menu: the SD card is missing, or saving did not work.
+static void apply_menu_notice(void) {
+	main_menu_set_notice(&menu, !storage_available() ? "No SD card: nothing is saved"
+	                            : save_failed         ? "Could not save changes"
+	                                                  : NULL);
+}
 
-	char buf[96];
-	render_puts(SCREEN_TOP, 1, 8, storage_available() ? "SD card: found" : "SD card: NOT FOUND",
-	            storage_available() ? STYLE_DIM : STYLE_ERROR);
-	if (!storage_available()) {
-		render_puts(SCREEN_TOP, 1, 9, "Settings will not be saved", STYLE_ERROR);
-	} else if (save_failed) {
-		render_puts(SCREEN_TOP, 1, 9, "Could not save changes", STYLE_ERROR);
-	}
-	snprintf(buf, sizeof buf, "Mode: %s", config.display == DISPLAY_SINGLE ? "single" : "dual");
-	render_puts(SCREEN_TOP, 1, 11, buf, STYLE_DIM);
-	snprintf(buf, sizeof buf, "Theme: %s  Font: %s",
-	         config.theme == THEME_DARK ? "dark" : config.theme == THEME_SEPIA ? "sepia" : "normal", config.font);
-	render_puts(SCREEN_TOP, 1, 12, buf, STYLE_DIM);
-	snprintf(buf, sizeof buf, "Recent books: %d", recent.count);
-	render_puts(SCREEN_TOP, 1, 13, buf, STYLE_DIM);
+// The logo on the top screen. It stays there in the menus, and while reading
+// in single-screen mode, because only the bottom screen is used then.
+static bool top_logo;
+
+static void show_top_logo(void) {
+	if (top_logo) return;
+	render_show_logo(SCREEN_TOP);
+	top_logo = true;
+}
+
+static void hide_top_logo(void) {
+	if (!top_logo) return;
+	render_hide_logo(SCREEN_TOP);
+	top_logo = false;
 }
 
 static void rebuild_menu(void) {
@@ -72,10 +70,12 @@ static void rebuild_menu(void) {
 		list[i] = titles[i];
 	}
 	main_menu_init(&menu, list, recent.count);
+	apply_menu_notice();
 }
 
 static void save_recent(void) {
 	save_failed = !recent_save(&recent);
+	apply_menu_notice();
 }
 
 static void show_error(const char *path, EpubResult result) {
@@ -115,7 +115,8 @@ static bool open_book(const char *path) {
 	turns_unsaved = 0;
 	bm_open = false;
 	if (resume && (marks.last_chapter > 0 || marks.last_offset > 0)) reader_set_notice(&reader, "Resumed");
-	render_set_font(&reading_font); // also clears both screens
+	if (dual_screen()) hide_top_logo(); // the top screen shows the second page
+	render_set_font(&reading_font);     // also clears both screens
 
 	recent_touch(&recent, path);
 	save_recent();
@@ -146,7 +147,8 @@ static void show_main_menu(void) {
 	current = SCREEN_MAIN_MENU;
 	input_set_context(INPUT_MENU);
 	main_menu_invalidate(&menu);
-	report("Waiting for input", ""); // the top screen shows the logo later
+	apply_menu_notice();
+	show_top_logo();
 }
 
 static void show_settings(void) {
@@ -178,8 +180,6 @@ static void update_main_menu(uint32_t actions, bool tapped, int x, int y) {
 	case MENU_EVENT_REMOVE_BOOK:
 		recent_remove(&recent, e.index);
 		save_recent();
-		snprintf(buf, sizeof buf, "Removed entry %d from the list", e.index + 1);
-		report(buf, "");
 		break;
 	case MENU_EVENT_NONE:
 		break;
@@ -235,7 +235,6 @@ static void update_settings(uint32_t actions) {
 		if (e.setting == SETTING_THEME) render_set_theme(config.theme); // the rest apply to the next book
 		save_failed = !config_save(&config);
 		settings_menu.redraw = true;
-		report("Settings", "Changes are saved at once"); // refreshes the values shown on the top screen
 	} else if (e.kind == SETTINGS_EVENT_BACK) {
 		show_main_menu();
 	}
@@ -275,6 +274,10 @@ static void update_reader(uint32_t actions) {
 	}
 }
 
+static volatile int vblanks; // frames since the program started, counted in the vertical blank interrupt
+
+static void count_vblank(void) { vblanks++; }
+
 int main(void) {
 	render_init();
 	font_load_default(&ui_font);
@@ -283,13 +286,36 @@ int main(void) {
 	input_init();
 	input_set_context(INPUT_MENU);
 
+	// The logo goes up on both screens straight away, and the card and the
+	// settings load while it is showing (decision 047).
+	irqSet(IRQ_VBLANK, count_vblank);
+	render_show_logo(SCREEN_TOP);
+	top_logo = true;
+	render_show_logo(SCREEN_BOTTOM);
+
 	storage_init();
 	config_load(&config);
 	recent_load(&recent);
 	render_set_theme(config.theme);
 	rebuild_menu();
 
-	report("Waiting for input", "");
+	// Three seconds, or until a button or the touchscreen is pressed. The bottom
+	// screen fades out and the main menu fades in. The top screen keeps the logo.
+	Startup startup;
+	startup_init(&startup);
+	while (startup.phase != STARTUP_DONE && pmMainLoop()) {
+		swiWaitForVBlank();
+		input_update();
+
+		render_fade(SCREEN_BOTTOM, startup_update(&startup, vblanks, input_any_pressed()));
+		if (startup.switch_now) {
+			render_hide_logo(SCREEN_BOTTOM); // black now: swap the logo for the menu
+			main_menu_invalidate(&menu);
+			main_menu_draw(&menu, SCREEN_BOTTOM);
+			render_present(SCREEN_BOTTOM);
+		}
+	}
+	render_fade(SCREEN_BOTTOM, 0);
 
 	while (pmMainLoop()) {
 		swiWaitForVBlank();

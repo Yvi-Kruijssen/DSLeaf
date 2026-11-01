@@ -41,6 +41,7 @@ typedef struct {
 	int press_frames; // frames left of the Open button press effect
 	int press_book;
 	bool redraw;      // something changed since the last draw
+	char notice[40];  // a warning for the bottom row, such as "No SD card", or empty
 } MainMenu;
 
 // Starts with the given books (UTF-8 titles, newest first). At most
@@ -53,6 +54,10 @@ void main_menu_init(MainMenu *menu, const char *const *titles, int count);
 // Returns what the caller should do, if anything.
 MainMenuEvent main_menu_update(MainMenu *menu, uint32_t actions, bool tapped, int tap_x,
                                int tap_y);
+
+// Sets the warning shown in red on the bottom row, or clears it with NULL. The
+// text is cut to fit. init clears it, so set it again after that.
+void main_menu_set_notice(MainMenu *menu, const char *text);
 
 // Makes the next main_menu_draw redraw everything, for example after another
 // screen was shown on top.

@@ -50,5 +50,6 @@ bool main_menu_draw(MainMenu *m, Screen screen) {
 	            m->focus == FOCUS_LIBRARY && !open_pressed, false);
 	draw_button(screen, MENU_SETTINGS_COL, "Settings", MENU_SETTINGS_W,
 	            m->focus == FOCUS_SETTINGS && !open_pressed, false);
+	if (m->notice[0]) render_puts_utf8_clip(screen, 1, 23, m->notice, STYLE_ERROR, TEXT_END_COL);
 	return true;
 }

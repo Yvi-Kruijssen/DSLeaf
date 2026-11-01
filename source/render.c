@@ -2,6 +2,7 @@
 
 #include <nds.h>
 
+#include "logo_bin.h" // generated from data/logo.bin by the build
 #include "pixbuf.h"
 #include "text.h"
 
@@ -21,6 +22,13 @@ static uint8_t fb[2][PIX_W * PIX_H] __attribute__((aligned(4)));
 static bool fb_dirty[2];
 static u16 *bitmap[2];
 static int bitmap_id[2];
+
+// The startup logo takes over the bitmap layer of a screen until it is hidden.
+// Its 64 colours go to palette entries 128 to 191, after those of the text
+// themes, and the pixel numbers in logo_bin are added to 128.
+#define LOGO_PALETTE_BASE 128
+#define LOGO_COLOURS 64
+static bool logo[2];
 
 static u16 *map[2];
 static u16 *gfx[2];
@@ -76,9 +84,10 @@ static void upload_tiles(void) {
 
 // Shows the tile layer or the bitmap layer on both screens, not both.
 static void show_layer(void) {
-	u32 layer = pixel ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
-	videoSetMode(MODE_5_2D | layer);
-	videoSetModeSub(MODE_5_2D | layer);
+	u32 top = pixel || logo[SCREEN_TOP] ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
+	u32 bottom = pixel || logo[SCREEN_BOTTOM] ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
+	videoSetMode(MODE_5_2D | top);
+	videoSetModeSub(MODE_5_2D | bottom);
 }
 
 void render_init(void) {
@@ -118,7 +127,7 @@ void render_clear(Screen screen) {
 
 // Copies the buffer of a screen to the bitmap layer, if it changed.
 void render_present(Screen screen) {
-	if (!pixel || !fb_dirty[screen]) return;
+	if (!pixel || !fb_dirty[screen] || logo[screen]) return;
 	fb_dirty[screen] = false;
 
 	volatile u32 *dst = (volatile u32 *)bitmap[screen];
@@ -207,4 +216,34 @@ int render_puts_utf8_clip(Screen screen, int col, int row, const char *str, Styl
 
 int render_puts_utf8(Screen screen, int col, int row, const char *str, Style style) {
 	return render_puts_utf8_clip(screen, col, row, str, style, render_cols());
+}
+
+// ---- The startup logo ----
+
+void render_show_logo(Screen screen) {
+	// logo_bin: 64 palette entries of 2 bytes, then 256 x 192 colour numbers.
+	const u16 *entries = (const u16 *)logo_bin;
+	u16 *pal = screen == SCREEN_TOP ? BG_PALETTE : BG_PALETTE_SUB;
+	for (int i = 0; i < LOGO_COLOURS; i++) pal[LOGO_PALETTE_BASE + i] = entries[i];
+
+	const u32 *src = (const u32 *)(logo_bin + LOGO_COLOURS * 2);
+	volatile u32 *dst = (volatile u32 *)bitmap[screen];
+	for (int i = 0; i < PIX_W * PIX_H / 4; i++) {
+		dst[i] = src[i] + 0x80808080u; // four pixels at a time: every colour number is below 64
+	}
+
+	logo[screen] = true;
+	show_layer();
+}
+
+void render_hide_logo(Screen screen) {
+	logo[screen] = false;
+	fb_dirty[screen] = true; // the bitmap layer was overwritten, so a pixel font has to copy its page again
+	show_layer();
+}
+
+void render_fade(Screen screen, int level) {
+	if (level < -16) level = -16;
+	if (level > 0) level = 0;
+	setBrightness(screen == SCREEN_TOP ? 1 : 2, level);
 }

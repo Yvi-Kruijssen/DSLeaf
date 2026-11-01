@@ -48,6 +48,16 @@ int render_rows(void);
 
 void render_clear(Screen screen);
 
+// The startup logo (decision 047). It covers the whole screen until it is hidden,
+// and the other screen is not affected. Whatever was on the screen before comes
+// back when the logo is hidden (a pixel font's page is copied again by the next
+// render_present).
+void render_show_logo(Screen screen);
+void render_hide_logo(Screen screen);
+
+// Fades one screen: 0 is normal and -16 is black.
+void render_fade(Screen screen, int level);
+
 // Makes what was drawn visible. Fonts drawn pixel by pixel are copied to the
 // screen here, once per change. Tile fonts show at once, so this does nothing
 // for them. Call it for both screens after drawing a frame.
