@@ -37,6 +37,12 @@ typedef struct {
 	uint32_t base;      // offset of buf[0] within the chapter
 	int window;
 	bool has_words;
+
+	// Looking for anchors: while a window is read, the offset of each id in
+	// `watch` is noted. See ct_find_anchors.
+	const char *const *watch;
+	int watch_count;
+	uint32_t *watch_found;
 } ChapterText;
 
 // Reads the window that contains `offset` (a huge offset gives the last window).
@@ -47,6 +53,13 @@ void ct_close(ChapterText *ct);
 bool ct_has_next(const ChapterText *ct);
 bool ct_next_window(ChapterText *ct); // false if this is the last window
 bool ct_prev_window(ChapterText *ct); // false if this is the first window
+
+// Finds where the elements with the given ids are in a chapter, as offsets from
+// the start of the chapter's text (the same offsets bookmarks use). `offsets`
+// gets one entry per id, UINT32_MAX for an id that is not in the chapter.
+// Reads the chapter once, window by window. Returns how many were found, or -1
+// if the chapter could not be read.
+int ct_find_anchors(Epub *book, int chapter, const char *const *ids, int count, uint32_t *offsets);
 
 // How much of the chapter file has been read so far, 0 to 1000.
 int ct_progress(const ChapterText *ct);

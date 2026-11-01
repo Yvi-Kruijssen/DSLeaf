@@ -2,7 +2,7 @@
 
 #include "input.h"
 
-static void keep_visible(BookmarkMenu *m, int count, int visible) {
+static void keep_visible(ListMenu *m, int count, int visible) {
 	if (visible < 1) visible = 1;
 	if (m->selected >= count) m->selected = count - 1;
 	if (m->selected < 0) m->selected = 0;
@@ -13,26 +13,21 @@ static void keep_visible(BookmarkMenu *m, int count, int visible) {
 	if (m->top < 0) m->top = 0;
 }
 
-void bookmark_menu_open(BookmarkMenu *m, const BookMarks *marks, int chapter, uint32_t offset, int visible) {
-	m->selected = marks->count > 0 ? marks->count - 1 : 0;
-	for (int i = 0; i < marks->count; i++) {
-		const Mark *k = &marks->mark[i];
-		if (k->chapter > chapter || (k->chapter == chapter && k->offset >= offset)) {
-			m->selected = i;
-			break;
-		}
-	}
+// ---- A list of any kind ----
+
+void list_menu_open(ListMenu *m, int count, int start, int visible) {
+	m->selected = start;
 	m->top = 0;
 	m->changed = true;
-	keep_visible(m, marks->count, visible);
+	keep_visible(m, count, visible);
 }
 
-void bookmark_menu_clamp(BookmarkMenu *m, const BookMarks *marks, int visible) {
-	keep_visible(m, marks->count, visible);
+void list_menu_clamp(ListMenu *m, int count, int visible) {
+	keep_visible(m, count, visible);
 	m->changed = true;
 }
 
-BmEvent bookmark_menu_update(BookmarkMenu *m, const BookMarks *marks, uint32_t actions, int visible) {
+BmEvent list_menu_update(ListMenu *m, int count, uint32_t actions, int visible, bool can_delete) {
 	BmEvent e = { BM_EVENT_NONE, 0 };
 	int before = m->selected, before_top = m->top;
 	if (visible < 1) visible = 1;
@@ -41,7 +36,7 @@ BmEvent bookmark_menu_update(BookmarkMenu *m, const BookMarks *marks, uint32_t a
 		e.kind = BM_EVENT_CLOSE;
 		return e;
 	}
-	if (marks->count == 0) return e; // nothing to move over, only B does anything
+	if (count == 0) return e; // nothing to move over, only B does anything
 
 	if (actions & ACT_UP) m->selected--;
 	else if (actions & ACT_DOWN) m->selected++;
@@ -51,13 +46,35 @@ BmEvent bookmark_menu_update(BookmarkMenu *m, const BookMarks *marks, uint32_t a
 		e.kind = BM_EVENT_JUMP;
 		e.index = m->selected;
 		return e;
-	} else if (actions & ACT_REMOVE) {
+	} else if ((actions & ACT_REMOVE) && can_delete) {
 		e.kind = BM_EVENT_DELETE;
 		e.index = m->selected;
 		return e;
 	}
 
-	keep_visible(m, marks->count, visible);
+	keep_visible(m, count, visible);
 	if (m->selected != before || m->top != before_top) m->changed = true;
 	return e;
+}
+
+// ---- The bookmarks ----
+
+void bookmark_menu_open(BookmarkMenu *m, const BookMarks *marks, int chapter, uint32_t offset, int visible) {
+	int start = marks->count > 0 ? marks->count - 1 : 0;
+	for (int i = 0; i < marks->count; i++) {
+		const Mark *k = &marks->mark[i];
+		if (k->chapter > chapter || (k->chapter == chapter && k->offset >= offset)) {
+			start = i;
+			break;
+		}
+	}
+	list_menu_open(m, marks->count, start, visible);
+}
+
+void bookmark_menu_clamp(BookmarkMenu *m, const BookMarks *marks, int visible) {
+	list_menu_clamp(m, marks->count, visible);
+}
+
+BmEvent bookmark_menu_update(BookmarkMenu *m, const BookMarks *marks, uint32_t actions, int visible) {
+	return list_menu_update(m, marks->count, actions, visible, true);
 }

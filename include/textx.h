@@ -12,6 +12,9 @@
 //   own, so the next block starts after it.
 // - LINEBREAK: a <br>.
 // - IMAGE: an image was here. `text` has its file name. Nothing draws it yet.
+// - ANCHOR: an element with an id starts here, and `text` is the id. Only given
+//   when asked for with `want_anchors`. It marks a position between two other
+//   items, so a link such as "chapter.xhtml#part2" can be turned into a place in the text.
 // - END: the chapter is finished.
 //
 // What it leaves out: <head>, styles, scripts, math and SVG drawings (but an
@@ -35,6 +38,7 @@ typedef enum {
 	TEXT_BLOCK,
 	TEXT_LINEBREAK,
 	TEXT_IMAGE,
+	TEXT_ANCHOR,
 } TextItemKind;
 
 typedef enum {
@@ -75,6 +79,8 @@ typedef struct {
 	int skip_depth;     // inside something that is left out
 	bool skip_is_block; // the skipped part is a break in the text (not an inline marker)
 	bool done;
+	bool want_anchors;  // set this to get ANCHOR items
+	bool anchor_done;   // the anchor of the current tag has been given
 
 	TextBlock stack[TEXTX_STACK];
 	int stack_depth;

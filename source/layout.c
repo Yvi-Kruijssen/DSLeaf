@@ -44,6 +44,7 @@ size_t record_append(uint8_t *buf, size_t len, size_t cap, const TextItem *item)
 		if (cap - len < 1) return 0;
 		buf[len] = REC_IMAGE;
 		return 1;
+	case TEXT_ANCHOR:
 	case TEXT_END:
 		break;
 	}

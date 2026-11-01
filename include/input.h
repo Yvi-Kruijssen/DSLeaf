@@ -44,6 +44,8 @@ typedef enum {
 	ACT_CONFIRM       = 1 << 4,  // A: select the item
 	ACT_BACK          = 1 << 5,  // B
 	ACT_REMOVE        = 1 << 6,  // Select: remove the focused entry
+	ACT_TAB_PREV      = 1 << 13, // L: the previous tab of a menu (decision 048)
+	ACT_TAB_NEXT      = 1 << 14, // R: the next tab
 
 	// Reading
 	ACT_NEXT_PAGE     = 1 << 7,  // Right, Down, R

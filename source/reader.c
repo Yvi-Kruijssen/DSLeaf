@@ -234,7 +234,9 @@ bool reader_goto(Reader *r, int chapter, uint32_t offset) {
 	if (!r->open || chapter < 0 || chapter >= r->book.chapter_count) return false;
 
 	uint32_t base = r->text.base;
-	if (chapter == r->chapter && offset >= base && offset <= base + r->text.len) {
+	// An offset at the very end of the window is the start of the next one, if there is a next one.
+	bool inside = offset >= base && (offset < base + r->text.len || (offset == base + r->text.len && !ct_has_next(&r->text)));
+	if (chapter == r->chapter && inside) {
 		show_page(r, page_for(r, offset - base)); // already loaded
 		return true;
 	}

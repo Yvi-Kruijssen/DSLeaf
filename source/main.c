@@ -16,6 +16,7 @@
 #include "settings.h"
 #include "startup.h"
 #include "storage.h"
+#include "toc.h"
 
 typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS } AppScreen;
 
@@ -32,7 +33,12 @@ static char book_path[RECENT_PATH_MAX];
 static uint32_t book_size;
 static int turns_unsaved; // page turns since the position was last saved
 static BookmarkMenu bm_menu;
-static bool bm_open;     // the bookmark menu is showing
+static bool bm_open;     // the bookmark and contents box is showing
+static ReadingTab menu_tab = TAB_BOOKMARKS; // the tab that was used last
+static Toc toc;          // the table of contents of the open book, read when first needed
+static bool toc_tried;   // reading it has been tried for this book
+static ListMenu toc_menu;
+static int toc_here;     // the entry the reader is in, or -1
 
 #define SAVE_EVERY_TURNS 10 // how often the position is saved while reading
 static AppScreen current = SCREEN_MAIN_MENU;
@@ -110,6 +116,8 @@ static bool open_book(const char *path) {
 		show_error(path, result);
 		return false;
 	}
+	toc_free(&toc);
+	toc_tried = false;
 	snprintf(book_path, sizeof book_path, "%s", path);
 	book_size = book_id;
 	turns_unsaved = 0;
@@ -141,6 +149,8 @@ static bool save_position(void) {
 
 static void show_main_menu(void) {
 	if (current == SCREEN_READER) {
+		toc_free(&toc);
+		toc_tried = false;
 		reader_close(&reader);
 		render_set_font(&ui_font);
 	}
@@ -200,11 +210,66 @@ static void update_library(uint32_t actions, bool tapped, int x, int y) {
 	}
 }
 
-// The bookmark menu is open: its keys are the menu ones (decision 033).
-static void update_bookmark_menu(uint32_t actions) {
-	int visible = bookmark_menu_visible();
-	BmEvent e = bookmark_menu_update(&bm_menu, &marks, actions, visible);
+// Reads the table of contents the first time it is needed, which can take a moment for a big one.
+static void ensure_toc(void) {
+	if (toc_tried) return;
+	toc_tried = true;
+	toc_load(&toc, &reader.book);
+}
 
+static void close_reading_menu(void) {
+	bm_open = false;
+	input_set_context(INPUT_READING);
+	reader.redraw = true;
+}
+
+// Opens the box on a tab. The contents start on the entry the reader is in.
+static void open_reading_menu(ReadingTab tab) {
+	menu_tab = tab;
+	int visible = bookmark_menu_visible();
+
+	if (tab == TAB_CONTENTS) {
+		ensure_toc();
+		toc_here = -1;
+		if (toc.count > 0) {
+			// Where the entries of this chapter are is looked up first, so the right one is found.
+			toc_resolve(&toc, &reader.book, reader_chapter(&reader));
+			toc_here = toc_current(&toc, reader_chapter(&reader), reader_offset(&reader));
+		}
+		list_menu_open(&toc_menu, toc.count, toc_here >= 0 ? toc_here : 0, visible);
+	} else {
+		bookmark_menu_open(&bm_menu, &marks, reader_chapter(&reader), reader_offset(&reader), visible);
+	}
+	bm_open = true;
+	input_set_context(INPUT_MENU);
+	reader.redraw = true;
+}
+
+// Goes to a table of contents entry.
+static void go_to_entry(int index) {
+	TocEntry *e = &toc.entry[index];
+	if (e->offset == TOC_OFFSET_UNKNOWN) toc_resolve(&toc, &reader.book, e->chapter);
+	reader_goto(&reader, e->chapter, e->offset == TOC_OFFSET_UNKNOWN ? 0 : e->offset);
+	save_position();
+}
+
+// The box is open: its keys are the menu ones (decision 033). L and R switch tabs.
+static void update_bookmark_menu(uint32_t actions) {
+	if (actions & (ACT_TAB_NEXT | ACT_TAB_PREV)) {
+		open_reading_menu(menu_tab == TAB_CONTENTS ? TAB_BOOKMARKS : TAB_CONTENTS);
+		return;
+	}
+	int visible = bookmark_menu_visible();
+
+	if (menu_tab == TAB_CONTENTS) {
+		BmEvent e = list_menu_update(&toc_menu, toc.count, actions, visible, false);
+		if (e.kind == BM_EVENT_JUMP) go_to_entry(e.index);
+		if (e.kind == BM_EVENT_JUMP || e.kind == BM_EVENT_CLOSE) close_reading_menu();
+		else if (toc_menu.changed) reader.redraw = true; // the box is drawn after the page
+		return;
+	}
+
+	BmEvent e = bookmark_menu_update(&bm_menu, &marks, actions, visible);
 	switch (e.kind) {
 	case BM_EVENT_CLOSE:
 	case BM_EVENT_JUMP:
@@ -213,9 +278,7 @@ static void update_bookmark_menu(uint32_t actions) {
 			reader_goto(&reader, k->chapter, k->offset);
 			save_position();
 		}
-		bm_open = false;
-		input_set_context(INPUT_READING);
-		reader.redraw = true;
+		close_reading_menu();
 		break;
 	case BM_EVENT_DELETE:
 		marks_remove_at(&marks, e.index);
@@ -225,7 +288,7 @@ static void update_bookmark_menu(uint32_t actions) {
 	case BM_EVENT_NONE:
 		break;
 	}
-	if (bm_open && bm_menu.changed) reader.redraw = true; // the box is drawn after the page
+	if (bm_open && bm_menu.changed) reader.redraw = true;
 }
 
 static void update_settings(uint32_t actions) {
@@ -254,12 +317,7 @@ static void update_reader(uint32_t actions) {
 	if (actions & ACT_BOOKMARK) {
 		if (reader_toggle_bookmark(&reader, &marks) != TOGGLE_FULL) save_position();
 	}
-	if (actions & ACT_BOOKMARK_MENU) {
-		bookmark_menu_open(&bm_menu, &marks, reader_chapter(&reader), reader_offset(&reader), bookmark_menu_visible());
-		bm_open = true;
-		input_set_context(INPUT_MENU);
-		reader.redraw = true;
-	}
+	if (actions & ACT_BOOKMARK_MENU) open_reading_menu(menu_tab);
 
 	if (actions & ACT_INVERT) {
 		// B cycles through the themes: normal, dark, sepia (decision 042).
@@ -347,8 +405,10 @@ int main(void) {
 			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
 			else if (current == SCREEN_SETTINGS) settings_draw(&settings_menu, &config, SCREEN_BOTTOM);
 			else if (reader_draw(&reader, dual_screen(), &marks) && bm_open) {
-				bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);
+				if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, marks.count, SCREEN_BOTTOM);
+				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);
 				bm_menu.changed = false;
+				toc_menu.changed = false;
 			}
 		}
 		render_present(SCREEN_TOP);

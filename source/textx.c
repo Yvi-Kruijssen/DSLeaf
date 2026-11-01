@@ -209,6 +209,7 @@ bool textx_next(TextExtractor *tx, TextItem *item) {
 			tx->event = xml_next(&tx->xml);
 			tx->have_event = true;
 			tx->scan = 0;
+			tx->anchor_done = false;
 		}
 		XmlReader *x = &tx->xml;
 
@@ -317,6 +318,17 @@ bool textx_next(TextExtractor *tx, TextItem *item) {
 		if ((is_block || is_skip || is_br || is_img || is_hr || is_cell) && tx->word_len > 0) {
 			put_word(tx, item);
 			return true; // the tag is handled on the next call
+		}
+
+		// An id marks this position, after any word before the tag has been given.
+		if (tx->want_anchors && !tx->anchor_done && !is_pagebreak) {
+			const char *id = xml_attr(x, "id");
+			if (id && id[0]) {
+				tx->anchor_done = true;
+				item->kind = TEXT_ANCHOR;
+				snprintf(item->text, sizeof item->text, "%s", id);
+				return true; // the tag itself is handled on the next call
+			}
 		}
 
 		tx->have_event = false;

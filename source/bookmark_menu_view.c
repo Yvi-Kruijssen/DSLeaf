@@ -25,30 +25,46 @@ static void put_blank_row(Screen screen, int col, int row, int width) {
 	render_putc(screen, col + width - 1, row, '|', STYLE_NORMAL);
 }
 
+// Draws the frame, the tab names and the footer, and returns where the list goes.
+typedef struct {
+	int col, row, width, height, text_col, text_end;
+} Box;
+
+static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown, const char *hint) {
+	Box b;
+	b.width = render_cols() - 2;
+	if (b.width > BOX_MAX_COLS) b.width = BOX_MAX_COLS;
+	b.height = shown + BOX_FRAME_ROWS;
+	b.col = (render_cols() - b.width) / 2;
+	b.row = (render_rows() - b.height) / 2;
+	b.text_col = b.col + 2;
+	b.text_end = b.col + b.width - 1;
+
+	put_edge(screen, b.col, b.row, b.width, '+', '-');
+	for (int y = 1; y < b.height - 1; y++) put_blank_row(screen, b.col, b.row + y, b.width);
+	put_edge(screen, b.col, b.row + b.height - 1, b.width, '+', '-');
+
+	// The tab names: the one in use is highlighted.
+	char marks[24];
+	snprintf(marks, sizeof marks, "Bookmarks %d/%d", bookmark_count, BOOKMARKS_MAX);
+	int next = render_puts(screen, b.text_col, b.row + 1, "Contents", tab == TAB_CONTENTS ? STYLE_HIGHLIGHT : STYLE_DIM);
+	render_puts_utf8_clip(screen, next + 1, b.row + 1, marks, tab == TAB_BOOKMARKS ? STYLE_HIGHLIGHT : STYLE_DIM, b.text_end);
+
+	render_puts_utf8_clip(screen, b.text_col, b.row + b.height - 2, hint, STYLE_DIM, b.text_end);
+	return b;
+}
+
 void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first_chapter, Screen screen) {
 	int visible = bookmark_menu_visible();
 	int shown = marks->count == 0 ? 2 : (marks->count < visible ? marks->count : visible);
-
-	int width = render_cols() - 2;
-	if (width > BOX_MAX_COLS) width = BOX_MAX_COLS;
-	int height = shown + BOX_FRAME_ROWS;
-	int col = (render_cols() - width) / 2;
-	int row = (render_rows() - height) / 2;
-	int text_col = col + 2, text_end = col + width - 1;
-
-	put_edge(screen, col, row, width, '+', '-');
-	for (int y = 1; y < height - 1; y++) put_blank_row(screen, col, row + y, width);
-	put_edge(screen, col, row + height - 1, width, '+', '-');
-
-	char title[32];
-	snprintf(title, sizeof title, "Bookmarks %d/%d", marks->count, BOOKMARKS_MAX);
-	render_puts(screen, text_col, row + 1, title, STYLE_HIGHLIGHT);
+	Box b = draw_box(screen, TAB_BOOKMARKS, marks->count, shown, "A go Sel del B back L/R tab");
 
 	if (marks->count == 0) {
-		render_puts_utf8_clip(screen, text_col, row + 2, "No bookmarks yet.", STYLE_NORMAL, text_end);
-		render_puts_utf8_clip(screen, text_col, row + 3, "A in a book adds one.", STYLE_DIM, text_end);
+		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No bookmarks yet.", STYLE_NORMAL, b.text_end);
+		render_puts_utf8_clip(screen, b.text_col, b.row + 3, "A in a book adds one.", STYLE_DIM, b.text_end);
+		return;
 	}
-	for (int i = 0; i < shown && marks->count > 0; i++) {
+	for (int i = 0; i < shown; i++) {
 		int index = m->top + i;
 		if (index >= marks->count) break;
 
@@ -59,9 +75,34 @@ void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first
 		char line[BOOKMARKS_PATH_MAX];
 		int chapter = (int)k->chapter - first_chapter + 1;
 		snprintf(line, sizeof line, "Ch %d %s", chapter < 1 ? 1 : chapter, k->text[0] ? k->text : "(no text)");
-		if (selected) render_putc(screen, col + 1, row + 2 + i, '>', STYLE_HIGHLIGHT);
-		render_puts_utf8_clip(screen, text_col, row + 2 + i, line, style, text_end);
+		if (selected) render_putc(screen, b.col + 1, b.row + 2 + i, '>', STYLE_HIGHLIGHT);
+		render_puts_utf8_clip(screen, b.text_col, b.row + 2 + i, line, style, b.text_end);
 	}
+}
 
-	render_puts_utf8_clip(screen, text_col, row + height - 2, "A go  Sel del  B back", STYLE_DIM, text_end);
+void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_count, Screen screen) {
+	int visible = bookmark_menu_visible();
+	int count = toc ? toc->count : 0;
+	int shown = count == 0 ? 2 : (count < visible ? count : visible);
+	Box b = draw_box(screen, TAB_CONTENTS, bookmark_count, shown, "A go  B back  L/R tab");
+
+	if (count == 0) {
+		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No table of contents", STYLE_NORMAL, b.text_end);
+		render_puts_utf8_clip(screen, b.text_col, b.row + 3, "in this book.", STYLE_DIM, b.text_end);
+		return;
+	}
+	for (int i = 0; i < shown; i++) {
+		int index = m->top + i;
+		if (index >= count) break;
+
+		const TocEntry *e = &toc->entry[index];
+		bool selected = index == m->selected;
+		Style style = selected ? STYLE_HIGHLIGHT : STYLE_NORMAL;
+		int row = b.row + 2 + i;
+
+		if (selected) render_putc(screen, b.col + 1, row, '>', STYLE_HIGHLIGHT);
+		else if (index == here) render_putc(screen, b.col + 1, row, '*', STYLE_DIM); // where you are
+		int indent = e->level > 2 ? 2 : e->level; // two columns for each level, at most two levels deep
+		render_puts_utf8_clip(screen, b.text_col + indent * 2, row, e->title, style, b.text_end);
+	}
 }

@@ -11,12 +11,17 @@
 
 #include "bookmarks.h"
 #include "render.h"
+#include "toc.h"
 
+// The cursor of a list in a menu box: which entry is selected and which is the
+// first one shown. Bookmarks and the table of contents both use it.
 typedef struct {
 	int selected;
-	int top;       // first bookmark shown
+	int top;       // first entry shown
 	bool changed;  // the cursor moved, so the box needs drawing again
-} BookmarkMenu;
+} ListMenu;
+
+typedef ListMenu BookmarkMenu;
 
 typedef enum {
 	BM_EVENT_NONE,
@@ -29,6 +34,18 @@ typedef struct {
 	BmEventKind kind;
 	int index;
 } BmEvent;
+
+// Generic list: puts the cursor on entry `start` of a list with `count` entries,
+// scrolled into view.
+void list_menu_open(ListMenu *menu, int count, int start, int visible);
+
+// Moves the cursor with Up, Down, Left and Right (a page), A picks the entry and
+// B closes. With `can_delete`, Select deletes the entry. Gives BM_EVENT_JUMP for
+// a pick, BM_EVENT_DELETE and BM_EVENT_CLOSE.
+BmEvent list_menu_update(ListMenu *menu, int count, uint32_t actions, int visible, bool can_delete);
+
+// Keeps the cursor inside a list of `count` entries.
+void list_menu_clamp(ListMenu *menu, int count, int visible);
 
 // Starts with the cursor on the first bookmark at or after the current place
 // (or the last one if all are earlier).
@@ -45,8 +62,15 @@ void bookmark_menu_clamp(BookmarkMenu *menu, const BookMarks *marks, int visible
 // How many bookmarks fit in the box on the current screen grid.
 int bookmark_menu_visible(void);
 
-// Draws the box centred on the screen. `first_chapter` is the book's first
-// chapter with text, so the chapter numbers match the status row.
+// The two tabs of the box, switched with L and R (decision 048).
+typedef enum { TAB_CONTENTS, TAB_BOOKMARKS } ReadingTab;
+
+// Draws the bookmarks tab, centred on the screen. `first_chapter` is the book's
+// first chapter with text, so the chapter numbers match the status row.
 void bookmark_menu_draw(const BookmarkMenu *menu, const BookMarks *marks, int first_chapter, Screen screen);
+
+// Draws the table of contents tab. `toc` may be NULL or empty for a book
+// without one. `here` is the entry the reader is in, marked with a star.
+void toc_menu_draw(const ListMenu *menu, const Toc *toc, int here, int bookmark_count, Screen screen);
 
 #endif

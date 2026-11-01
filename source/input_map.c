@@ -14,6 +14,8 @@ uint32_t input_map(InputContext context, uint32_t b) {
 		if (b & BTN_A)      a |= ACT_CONFIRM;
 		if (b & BTN_B)      a |= ACT_BACK;
 		if (b & BTN_SELECT) a |= ACT_REMOVE;
+		if (b & BTN_L)      a |= ACT_TAB_PREV;
+		if (b & BTN_R)      a |= ACT_TAB_NEXT;
 		return a;
 	}
 
@@ -44,6 +46,8 @@ const char *input_action_name(InputAction action) {
 	case ACT_BOOKMARK_MENU: return "BOOKMARK_MENU";
 	case ACT_INVERT:        return "INVERT";
 	case ACT_MENU:          return "MENU";
+	case ACT_TAB_PREV:      return "TAB_PREV";
+	case ACT_TAB_NEXT:      return "TAB_NEXT";
 	default:                return "NONE";
 	}
 }
