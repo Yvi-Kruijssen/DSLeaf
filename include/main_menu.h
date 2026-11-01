@@ -9,9 +9,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "recent.h"
 #include "render.h"
 
-#define RECENT_MAX 3
 #define TITLE_MAX 96 // bytes of UTF-8, including the terminator
 
 typedef enum {

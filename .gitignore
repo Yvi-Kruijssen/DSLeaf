@@ -18,3 +18,7 @@ compile_commands.json
 # Private project notes
 CLAUDE.md
 docs/
+
+# Test SD card folder for melonDS
+devsd/
+devsd.img
