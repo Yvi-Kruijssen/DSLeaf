@@ -1,0 +1,20 @@
+# Build output
+build/
+*.nds
+*.elf
+*.map
+*.ds.gba
+compile_commands.json
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Private project notes
+CLAUDE.md
+docs/
