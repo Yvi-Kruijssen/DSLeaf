@@ -33,6 +33,19 @@ void font_load_default(Font *font);
 // Returns false for anything else.
 bool font_from_bytes(Font *font, const uint8_t *data, size_t size);
 
+// A font that can be chosen in Settings.
+typedef struct {
+	char name[64]; // "default", or the file name in /DSLeaf/Fonts
+	int width, height;
+} FontChoice;
+
+#define FONT_CHOICES_MAX 16
+
+// Lists the built-in font first, then the valid fonts in /DSLeaf/Fonts sorted by
+// name, ignoring case. Files that are not fonts, folders, and names that cannot
+// be saved in config.txt are left out. Returns how many were listed (at least 1).
+int font_list(FontChoice *out, int max);
+
 // Loads the font called `name` from config.txt: "default" is the built-in
 // font, anything else is a file in /DSLeaf/Fonts. If the file is missing or not
 // a font, the built-in font is used and false is returned.

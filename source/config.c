@@ -12,6 +12,9 @@ void config_set_defaults(Config *c) {
 	c->display = DISPLAY_DUAL;
 	c->theme = THEME_NORMAL;
 	c->rotate = false;
+	c->paragraph_gap = 1;    // decision 042
+	c->paragraph_indent = 0;
+	c->margin = 1;           // decision 026
 	snprintf(c->font, sizeof c->font, "default");
 }
 
@@ -30,6 +33,15 @@ static bool parse_bool(const char *value, bool *out) {
 	if (strcmp(value, "0") == 0) { *out = false; return true; }
 	if (strcmp(value, "1") == 0) { *out = true; return true; }
 	return false;
+}
+
+// A whole number from 0 to `max`. Anything else is refused.
+static bool parse_number(const char *value, int max, uint8_t *out) {
+	if (value[0] < '0' || value[0] > '9' || value[1] != '\0') return false; // one digit is enough for these settings
+	int n = value[0] - '0';
+	if (n > max) return false;
+	*out = (uint8_t)n;
+	return true;
 }
 
 static char *trim(char *s) {
@@ -52,6 +64,12 @@ static void apply(Config *c, const char *key, const char *value) {
 		if (parse_bool(value, &b)) c->theme = b ? THEME_DARK : THEME_NORMAL;
 	} else if (strcmp(key, "rotate") == 0) {
 		if (parse_bool(value, &b)) c->rotate = b;
+	} else if (strcmp(key, "paragraph_gap") == 0) {
+		parse_number(value, CONFIG_GAP_MAX, &c->paragraph_gap);
+	} else if (strcmp(key, "paragraph_indent") == 0) {
+		parse_number(value, CONFIG_INDENT_MAX, &c->paragraph_indent);
+	} else if (strcmp(key, "margin") == 0) {
+		parse_number(value, CONFIG_MARGIN_MAX, &c->margin);
 	} else if (strcmp(key, "font") == 0) {
 		if (valid_font_name(value)) snprintf(c->font, sizeof c->font, "%s", value);
 	}
@@ -78,10 +96,10 @@ void config_parse(Config *c, const char *text) {
 
 int config_format(const Config *c, char *buf, size_t cap) {
 	int n = snprintf(buf, cap,
-	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\n",
+	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\n",
 	                 c->display == DISPLAY_SINGLE ? "single" : "dual",
 	                 c->theme == THEME_DARK ? "dark" : c->theme == THEME_SEPIA ? "sepia" : "normal", c->font,
-	                 c->rotate ? 1 : 0);
+	                 c->rotate ? 1 : 0, c->paragraph_gap, c->paragraph_indent, c->margin);
 	return (n < 0 || (size_t)n >= cap) ? -1 : n;
 }
 

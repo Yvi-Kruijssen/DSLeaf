@@ -4,13 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-void reader_geometry(const Font *font, int *cols, int *rows) {
+void reader_geometry(const Font *font, int margin, int *cols, int *rows) {
 	// The grid: 32 by 24 8x8 tiles for a tile font, otherwise as many cells as fit in 256 by 192 pixels.
 	int grid_cols = font_is_tile(font) ? 32 : 256 / font->width;
 	int grid_rows = font_is_tile(font) ? 24 / (font->height / 8) : 192 / font->height;
 
-	*cols = grid_cols - 2 * READER_MARGIN;
+	if (margin < 0) margin = 0;
+	*cols = grid_cols - 2 * margin;
 	if (*cols > LAYOUT_COLS_MAX) *cols = LAYOUT_COLS_MAX;
+	if (*cols < 8) *cols = 8; // never narrower than a few words
 	*rows = grid_rows - 1; // the status row
 	if (*rows > LAYOUT_ROWS_MAX) *rows = LAYOUT_ROWS_MAX;
 }
@@ -84,10 +86,10 @@ static int find_chapter(Reader *r, int from, int step) {
 }
 
 EpubResult reader_open(Reader *r, const char *path, int chapter, uint32_t offset, int cols, int rows,
-                       int per_view) {
+                       int per_view, const LayoutStyle *style) {
 	memset(r, 0, sizeof *r);
-	LayoutStyle style = LAYOUT_STYLE_DEFAULT;
-	r->style = style;
+	LayoutStyle fallback = LAYOUT_STYLE_DEFAULT;
+	r->style = style ? *style : fallback;
 	r->cols = cols;
 	r->rows = rows;
 	r->per_view = per_view < 1 ? 1 : (per_view > READER_VIEW_MAX ? READER_VIEW_MAX : per_view);

@@ -4,11 +4,15 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "theme.h"
 
 #define CONFIG_PATH "/DSLeaf/config.txt"
 #define CONFIG_FONT_MAX 64 // file name in /DSLeaf/Fonts, or "default"
+#define CONFIG_GAP_MAX 2       // blank lines between paragraphs
+#define CONFIG_INDENT_MAX 4    // first-line indent, in columns
+#define CONFIG_MARGIN_MAX 4    // empty columns at each side of the text
 
 typedef enum {
 	DISPLAY_DUAL,
@@ -19,6 +23,9 @@ typedef struct {
 	DisplayMode display;
 	Theme theme;
 	bool rotate;
+	uint8_t paragraph_gap;    // 0 to CONFIG_GAP_MAX
+	uint8_t paragraph_indent; // 0 to CONFIG_INDENT_MAX
+	uint8_t margin;           // 0 to CONFIG_MARGIN_MAX
 	char font[CONFIG_FONT_MAX];
 } Config;
 

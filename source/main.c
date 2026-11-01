@@ -15,15 +15,17 @@
 #include "reader.h"
 #include "recent.h"
 #include "render.h"
+#include "settings.h"
 #include "storage.h"
 
-typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER } AppScreen;
+typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS } AppScreen;
 
 static Font ui_font;      // the menus always use the built-in font
 static Font reading_font; // the book uses the font from the settings
 static Config config;
 static RecentList recent;
 static MainMenu menu;
+static SettingsMenu settings_menu;
 static Library library; // large, so not on the stack
 static Reader reader;   // the open book while reading
 static BookMarks marks; // the bookmarks and last position of the open book
@@ -92,7 +94,8 @@ static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 static bool open_book(const char *path) {
 	font_load_named(&reading_font, config.font); // falls back to the built-in font
 	int cols, rows;
-	reader_geometry(&reading_font, &cols, &rows);
+	reader_geometry(&reading_font, config.margin, &cols, &rows);
+	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent };
 
 	// Pick up where the book was left off, and load its bookmarks. A book is
 	// recognised by its path and size.
@@ -102,7 +105,7 @@ static bool open_book(const char *path) {
 	bool resume = known && marks.has_last;
 
 	EpubResult result = reader_open(&reader, path, resume ? marks.last_chapter : 0, resume ? marks.last_offset : 0,
-	                                cols, rows, dual_screen() ? 2 : 1);
+	                                cols, rows, dual_screen() ? 2 : 1, &style);
 	if (result != EPUB_OK) {
 		show_error(path, result);
 		return false;
@@ -146,6 +149,11 @@ static void show_main_menu(void) {
 	report("Waiting for input", ""); // the top screen shows the logo later
 }
 
+static void show_settings(void) {
+	settings_open(&settings_menu);
+	current = SCREEN_SETTINGS;
+}
+
 static void show_library(void) {
 	library_scan(&library);
 	current = SCREEN_LIBRARY;
@@ -165,7 +173,7 @@ static void update_main_menu(uint32_t actions, bool tapped, int x, int y) {
 		show_library();
 		break;
 	case MENU_EVENT_OPEN_SETTINGS:
-		report("Would open Settings", "");
+		show_settings();
 		break;
 	case MENU_EVENT_REMOVE_BOOK:
 		recent_remove(&recent, e.index);
@@ -218,6 +226,19 @@ static void update_bookmark_menu(uint32_t actions) {
 		break;
 	}
 	if (bm_open && bm_menu.changed) reader.redraw = true; // the box is drawn after the page
+}
+
+static void update_settings(uint32_t actions) {
+	SettingsEvent e = settings_update(&settings_menu, &config, actions);
+
+	if (e.kind == SETTINGS_EVENT_CHANGED) {
+		if (e.setting == SETTING_THEME) render_set_theme(config.theme); // the rest apply to the next book
+		save_failed = !config_save(&config);
+		settings_menu.redraw = true;
+		report("Settings", "Changes are saved at once"); // refreshes the values shown on the top screen
+	} else if (e.kind == SETTINGS_EVENT_BACK) {
+		show_main_menu();
+	}
 }
 
 static void update_reader(uint32_t actions) {
@@ -289,6 +310,8 @@ int main(void) {
 			update_main_menu(actions, tapped, x, y);
 		} else if (current == SCREEN_LIBRARY) {
 			update_library(actions, tapped, x, y);
+		} else if (current == SCREEN_SETTINGS) {
+			update_settings(actions);
 		} else {
 			update_reader(actions);
 		}
@@ -296,6 +319,7 @@ int main(void) {
 		if (!box_visible) {
 			if (current == SCREEN_MAIN_MENU) main_menu_draw(&menu, SCREEN_BOTTOM);
 			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
+			else if (current == SCREEN_SETTINGS) settings_draw(&settings_menu, &config, SCREEN_BOTTOM);
 			else if (reader_draw(&reader, dual_screen(), &marks) && bm_open) {
 				bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);
 				bm_menu.changed = false;
