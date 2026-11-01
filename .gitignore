@@ -21,4 +21,4 @@ docs/
 
 # Test SD card folder for melonDS
 devsd/
-devsd.img
+devsd.img*
