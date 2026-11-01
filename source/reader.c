@@ -4,10 +4,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-void reader_geometry(const Font *font, int margin, int *cols, int *rows) {
-	// The grid: 32 by 24 8x8 tiles for a tile font, otherwise as many cells as fit in 256 by 192 pixels.
-	int grid_cols = font_is_tile(font) ? 32 : 256 / font->width;
-	int grid_rows = font_is_tile(font) ? 24 / (font->height / 8) : 192 / font->height;
+#include "pixbuf.h"
+
+void reader_geometry(const Font *font, int margin, bool rotated, int *cols, int *rows) {
+	// The grid: 32 by 24 8x8 tiles for a tile font (24 by 32 when rotated), otherwise
+	// as many cells as fit in the 256 by 192 pixel screen, which pixbuf.c works out.
+	int grid_cols, grid_rows;
+	if (font_is_tile(font)) {
+		grid_cols = rotated ? 24 : 32;
+		grid_rows = (rotated ? 32 : 24) / (font->height / 8);
+	} else {
+		grid_cols = pix_cols(font, rotated);
+		grid_rows = pix_rows(font, rotated);
+	}
 
 	if (margin < 0) margin = 0;
 	*cols = grid_cols - 2 * margin;
@@ -317,4 +326,30 @@ ToggleResult reader_toggle_bookmark(Reader *r, BookMarks *marks) {
 	}
 	reader_set_notice(r, "Bookmark added");
 	return TOGGLE_ADDED;
+}
+
+static void copy_cut(char *dst, size_t cap, const char *src, int max) {
+	size_t n = src ? strlen(src) : 0;
+	if ((int)n > max) n = (size_t)(max < 0 ? 0 : max);
+	if (n >= cap) n = cap - 1;
+	if (src && n > 0) memcpy(dst, src, n);
+	dst[n] = '\0';
+}
+
+void reader_status_fit(const char *left, const char *right, int cols, bool prefer_left, char *out_left,
+                       char *out_right, size_t cap) {
+	int ln = left ? (int)strlen(left) : 0, rn = right ? (int)strlen(right) : 0;
+
+	if (ln + 1 + rn <= cols || ln == 0 || rn == 0) {
+		copy_cut(out_left, cap, left, cols);
+		copy_cut(out_right, cap, right, cols - (ln > 0 ? ln + 1 : 0));
+		return;
+	}
+	if (prefer_left) {
+		copy_cut(out_left, cap, left, cols);
+		out_right[0] = '\0';
+	} else {
+		out_left[0] = '\0';
+		copy_cut(out_right, cap, right, cols);
+	}
 }

@@ -17,6 +17,7 @@ typedef enum {
 	SETTING_SCREEN,  // dual or single
 	SETTING_THEME,
 	SETTING_FONT,
+	SETTING_ORIENTATION, // normal or rotated reading
 	SETTING_GAP,     // blank lines between paragraphs
 	SETTING_INDENT,  // first-line indent
 	SETTING_MARGIN,  // empty columns at each side

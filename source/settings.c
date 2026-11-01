@@ -17,6 +17,7 @@ const char *settings_label(Setting s) {
 	case SETTING_SCREEN: return "Screen mode";
 	case SETTING_THEME:  return "Theme";
 	case SETTING_FONT:   return "Font";
+	case SETTING_ORIENTATION: return "Orientation";
 	case SETTING_GAP:    return "Para spacing";
 	case SETTING_INDENT: return "Indent";
 	case SETTING_MARGIN: return "Margins";
@@ -68,6 +69,7 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 		}
 		break;
 	}
+	case SETTING_ORIENTATION: snprintf(out, cap, "%s", c->rotate ? "Rotated" : "Normal"); break;
 	case SETTING_GAP:    plural(out, cap, c->paragraph_gap, "line", "lines"); break;
 	case SETTING_INDENT: plural(out, cap, c->paragraph_indent, "col", "cols"); break;
 	case SETTING_MARGIN: plural(out, cap, c->margin, "col", "cols"); break;
@@ -88,6 +90,10 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 	case SETTING_FONT:
 		*line1 = "Font for the book text.";
 		*line2 = "Add fonts to /DSLeaf/Fonts.";
+		break;
+	case SETTING_ORIENTATION:
+		*line1 = "Hold the device sideways to";
+		*line2 = "read. Used when a book opens.";
 		break;
 	case SETTING_GAP:
 		*line1 = "Blank lines between paragraphs";
@@ -122,6 +128,7 @@ static void change(SettingsMenu *m, Config *c, Setting s, int delta) {
 		snprintf(c->font, sizeof c->font, "%s", m->fonts[wrap(i, delta, m->font_count)].name);
 		break;
 	}
+	case SETTING_ORIENTATION: c->rotate = !c->rotate; break;
 	case SETTING_GAP:    c->paragraph_gap = (uint8_t)wrap(c->paragraph_gap, delta, CONFIG_GAP_MAX + 1); break;
 	case SETTING_INDENT: c->paragraph_indent = (uint8_t)wrap(c->paragraph_indent, delta, CONFIG_INDENT_MAX + 1); break;
 	case SETTING_MARGIN: c->margin = (uint8_t)wrap(c->margin, delta, CONFIG_MARGIN_MAX + 1); break;

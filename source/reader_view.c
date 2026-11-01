@@ -36,15 +36,15 @@ static void draw_mark(const Reader *r, int slot, Screen screen, const BookMarks 
 static void draw_status(const Reader *r, Screen screen, const char *left, const char *right, bool starred) {
 	int row = r->rows; // the row below the text
 	int margin = margin_of(r);
-	if (left) {
-		char text[48];
-		snprintf(text, sizeof text, "%s%s", starred && margin == 0 ? "*" : "", left);
-		render_puts(screen, margin, row, text, STYLE_DIM);
-	}
-	if (right) {
-		int col = margin + r->cols - (int)strlen(right);
-		render_puts(screen, col, row, right, STYLE_DIM);
-	}
+
+	// With no margin there is no room for the star beside the text, so it goes in front of the left text.
+	char star_left[48];
+	snprintf(star_left, sizeof star_left, "%s%s", starred && margin == 0 ? "*" : "", left ? left : "");
+
+	char l[48], rt[48];
+	reader_status_fit(star_left, right, r->cols, r->notice[0] != '\0', l, rt, sizeof l);
+	if (l[0]) render_puts(screen, margin, row, l, STYLE_DIM);
+	if (rt[0]) render_puts(screen, margin + r->cols - (int)strlen(rt), row, rt, STYLE_DIM);
 }
 
 bool reader_draw(Reader *r, bool dual, const BookMarks *marks) {

@@ -1,5 +1,7 @@
 #include "bookmark_menu.h"
 
+#include <string.h>
+
 #include "input.h"
 
 static void keep_visible(ListMenu *m, int count, int visible) {
@@ -77,4 +79,22 @@ void bookmark_menu_clamp(BookmarkMenu *m, const BookMarks *marks, int visible) {
 
 BmEvent bookmark_menu_update(BookmarkMenu *m, const BookMarks *marks, uint32_t actions, int visible) {
 	return list_menu_update(m, marks->count, actions, visible, true);
+}
+
+// ---- Text for boxes of different widths ----
+
+bool reading_menu_full_header(int width) {
+	return width >= (int)(strlen("Contents") + 1 + strlen("Bookmarks 20/20"));
+}
+
+const char *reading_menu_hint(ReadingTab tab, int width) {
+	static const char *const bookmarks[] = { "A go Sel del B back L/R tab", "A go Sel del B back", "A go B back" };
+	static const char *const contents[] = { "A go  B back  L/R tab", "A go B back" };
+	const char *const *list = tab == TAB_CONTENTS ? contents : bookmarks;
+	int n = tab == TAB_CONTENTS ? 2 : 3;
+
+	for (int i = 0; i < n; i++) {
+		if ((int)strlen(list[i]) <= width) return list[i];
+	}
+	return list[n - 1];
 }

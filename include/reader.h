@@ -43,11 +43,12 @@ typedef struct {
 	uint32_t total_bytes;
 } Reader;
 
-// Page size for a font on a normal (not rotated) screen: the grid minus `margin`
-// columns on each side, and minus one row for the status row. For an 8x8
-// font that is 30 columns and 23 rows, for 8x16 it is 30 by 11 (decision 043)
-// and for 6x12 it is 40 by 15 (decision 044). Needs no DS code.
-void reader_geometry(const Font *font, int margin, int *cols, int *rows);
+// Page size for a font: the grid minus `margin` columns on each side, and minus
+// one row for the status row. For an 8x8 font that is 30 columns and 23 rows, for
+// 8x16 it is 30 by 11 (decision 043) and for 6x12 it is 40 by 15 (decision 044).
+// With `rotated` (decision 049) the page is portrait: 22 by 31 for 8x8, 22 by 15
+// for 8x16 and 30 by 20 for 6x12. Needs no DS code.
+void reader_geometry(const Font *font, int margin, bool rotated, int *cols, int *rows);
 
 // Opens a book at a chapter and an offset in that chapter's text (0 for the
 // start). A chapter without text is skipped when the offset is 0. `style` is
@@ -102,6 +103,13 @@ void reader_snippet(const Reader *r, int slot, char *out, size_t cap);
 
 // Shows a short message in the status row until the next page turn.
 void reader_set_notice(Reader *r, const char *text);
+
+// What fits in a status row of `cols` columns. Both texts fit when they are short
+// enough. If not, the notice (when `prefer_left`) or else the position on the
+// right is kept and the other is dropped. A text that is longer than the row is
+// cut. The outputs hold at most `cap` bytes.
+void reader_status_fit(const char *left, const char *right, int cols, bool prefer_left, char *out_left,
+                       char *out_right, size_t cap);
 
 // How far through the book, 0 to 100.
 int reader_percent(const Reader *r);

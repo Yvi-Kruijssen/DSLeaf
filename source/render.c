@@ -150,6 +150,12 @@ void render_set_font(const Font *new_font) {
 	restart();
 }
 
+void render_set_view(const Font *new_font, bool value) {
+	font = new_font;
+	rotated = value;
+	restart();
+}
+
 void render_set_rotated(bool value) {
 	rotated = value;
 	restart();

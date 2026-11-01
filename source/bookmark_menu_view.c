@@ -30,7 +30,7 @@ typedef struct {
 	int col, row, width, height, text_col, text_end;
 } Box;
 
-static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown, const char *hint) {
+static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown) {
 	Box b;
 	b.width = render_cols() - 2;
 	if (b.width > BOX_MAX_COLS) b.width = BOX_MAX_COLS;
@@ -44,20 +44,30 @@ static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown
 	for (int y = 1; y < b.height - 1; y++) put_blank_row(screen, b.col, b.row + y, b.width);
 	put_edge(screen, b.col, b.row + b.height - 1, b.width, '+', '-');
 
-	// The tab names: the one in use is highlighted.
+	// The tab names: the one in use is highlighted. A narrow box (a rotated page)
+	// shows only that one, with arrows to say there is another.
+	int inner = b.text_end - b.text_col;
 	char marks[24];
 	snprintf(marks, sizeof marks, "Bookmarks %d/%d", bookmark_count, BOOKMARKS_MAX);
-	int next = render_puts(screen, b.text_col, b.row + 1, "Contents", tab == TAB_CONTENTS ? STYLE_HIGHLIGHT : STYLE_DIM);
-	render_puts_utf8_clip(screen, next + 1, b.row + 1, marks, tab == TAB_BOOKMARKS ? STYLE_HIGHLIGHT : STYLE_DIM, b.text_end);
+	if (reading_menu_full_header(inner)) {
+		int next = render_puts(screen, b.text_col, b.row + 1, "Contents", tab == TAB_CONTENTS ? STYLE_HIGHLIGHT : STYLE_DIM);
+		render_puts_utf8_clip(screen, next + 1, b.row + 1, marks, tab == TAB_BOOKMARKS ? STYLE_HIGHLIGHT : STYLE_DIM, b.text_end);
+	} else {
+		char one[32];
+		if (tab == TAB_CONTENTS) snprintf(one, sizeof one, "<Contents>");
+		else if ((int)strlen(marks) + 2 <= inner) snprintf(one, sizeof one, "<%s>", marks);
+		else snprintf(one, sizeof one, "<Bookmarks>");
+		render_puts_utf8_clip(screen, b.text_col, b.row + 1, one, STYLE_HIGHLIGHT, b.text_end);
+	}
 
-	render_puts_utf8_clip(screen, b.text_col, b.row + b.height - 2, hint, STYLE_DIM, b.text_end);
+	render_puts_utf8_clip(screen, b.text_col, b.row + b.height - 2, reading_menu_hint(tab, inner), STYLE_DIM, b.text_end);
 	return b;
 }
 
 void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first_chapter, Screen screen) {
 	int visible = bookmark_menu_visible();
 	int shown = marks->count == 0 ? 2 : (marks->count < visible ? marks->count : visible);
-	Box b = draw_box(screen, TAB_BOOKMARKS, marks->count, shown, "A go Sel del B back L/R tab");
+	Box b = draw_box(screen, TAB_BOOKMARKS, marks->count, shown);
 
 	if (marks->count == 0) {
 		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No bookmarks yet.", STYLE_NORMAL, b.text_end);
@@ -84,11 +94,11 @@ void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_cou
 	int visible = bookmark_menu_visible();
 	int count = toc ? toc->count : 0;
 	int shown = count == 0 ? 2 : (count < visible ? count : visible);
-	Box b = draw_box(screen, TAB_CONTENTS, bookmark_count, shown, "A go  B back  L/R tab");
+	Box b = draw_box(screen, TAB_CONTENTS, bookmark_count, shown);
 
 	if (count == 0) {
-		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No table of contents", STYLE_NORMAL, b.text_end);
-		render_puts_utf8_clip(screen, b.text_col, b.row + 3, "in this book.", STYLE_DIM, b.text_end);
+		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No contents found", STYLE_NORMAL, b.text_end);
+		render_puts_utf8_clip(screen, b.text_col, b.row + 3, "in this book", STYLE_DIM, b.text_end);
 		return;
 	}
 	for (int i = 0; i < shown; i++) {

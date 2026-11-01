@@ -34,6 +34,10 @@ void render_init(void);
 // use the tile layer, any other size uses the bitmap layer.
 void render_set_font(const Font *font);
 
+// Sets the font and the rotation in one go, and clears both screens. Prefer this
+// to the two calls below when changing both.
+void render_set_view(const Font *font, bool rotated);
+
 // Switches between the normal and the rotated grid, and clears both screens.
 void render_set_rotated(bool rotated);
 bool render_is_rotated(void);

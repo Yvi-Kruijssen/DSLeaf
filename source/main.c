@@ -100,7 +100,7 @@ static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 static bool open_book(const char *path) {
 	font_load_named(&reading_font, config.font); // falls back to the built-in font
 	int cols, rows;
-	reader_geometry(&reading_font, config.margin, &cols, &rows);
+	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
 	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent };
 
 	// Pick up where the book was left off, and load its bookmarks. A book is
@@ -124,7 +124,7 @@ static bool open_book(const char *path) {
 	bm_open = false;
 	if (resume && (marks.last_chapter > 0 || marks.last_offset > 0)) reader_set_notice(&reader, "Resumed");
 	if (dual_screen()) hide_top_logo(); // the top screen shows the second page
-	render_set_font(&reading_font);     // also clears both screens
+	render_set_view(&reading_font, config.rotate); // also clears both screens. Menus are never rotated (decision 049)
 
 	recent_touch(&recent, path);
 	save_recent();
@@ -152,7 +152,7 @@ static void show_main_menu(void) {
 		toc_free(&toc);
 		toc_tried = false;
 		reader_close(&reader);
-		render_set_font(&ui_font);
+		render_set_view(&ui_font, false);
 	}
 	current = SCREEN_MAIN_MENU;
 	input_set_context(INPUT_MENU);

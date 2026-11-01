@@ -23,6 +23,16 @@ typedef struct {
 
 typedef ListMenu BookmarkMenu;
 
+// The two tabs of the box, switched with L and R (decision 048).
+typedef enum { TAB_CONTENTS, TAB_BOOKMARKS } ReadingTab;
+
+// The box is narrower when the page is rotated (decision 049). These say what
+// fits in a text area `width` characters wide: whether both tab names fit in the
+// title row (otherwise only the one in use is shown, as "<Contents>"), and the
+// longest key hint that fits.
+bool reading_menu_full_header(int width);
+const char *reading_menu_hint(ReadingTab tab, int width);
+
 typedef enum {
 	BM_EVENT_NONE,
 	BM_EVENT_CLOSE,
@@ -61,9 +71,6 @@ void bookmark_menu_clamp(BookmarkMenu *menu, const BookMarks *marks, int visible
 
 // How many bookmarks fit in the box on the current screen grid.
 int bookmark_menu_visible(void);
-
-// The two tabs of the box, switched with L and R (decision 048).
-typedef enum { TAB_CONTENTS, TAB_BOOKMARKS } ReadingTab;
 
 // Draws the bookmarks tab, centred on the screen. `first_chapter` is the book's
 // first chapter with text, so the chapter numbers match the status row.

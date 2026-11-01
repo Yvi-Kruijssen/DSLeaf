@@ -47,7 +47,7 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 		settings_font_size(m, c, &w, &h);
 		Font size = { .width = w, .height = h };
 		int cols, rows;
-		reader_geometry(&size, c->margin, &cols, &rows);
+		reader_geometry(&size, c->margin, c->rotate, &cols, &rows);
 		char info[40];
 		snprintf(info, sizeof info, "Size %dx%d, page %dx%d", w, h, cols, rows);
 		render_puts(screen, 1, HELP_ROW + 2, info, STYLE_NORMAL);
