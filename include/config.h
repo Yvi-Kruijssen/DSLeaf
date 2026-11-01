@@ -13,6 +13,7 @@
 #define CONFIG_GAP_MAX 2       // blank lines between paragraphs
 #define CONFIG_INDENT_MAX 4    // first-line indent, in columns
 #define CONFIG_MARGIN_MAX 4    // empty columns at each side of the text
+#define CONFIG_LINE_MAX 3      // extra pixel rows between lines of a pixel font
 
 typedef enum {
 	DISPLAY_DUAL,
@@ -26,6 +27,7 @@ typedef struct {
 	uint8_t paragraph_gap;    // 0 to CONFIG_GAP_MAX
 	uint8_t paragraph_indent; // 0 to CONFIG_INDENT_MAX
 	uint8_t margin;           // 0 to CONFIG_MARGIN_MAX
+	uint8_t line_spacing;     // 0 to CONFIG_LINE_MAX, pixel fonts only
 	char font[CONFIG_FONT_MAX];
 } Config;
 

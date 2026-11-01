@@ -17,6 +17,7 @@
 typedef struct {
 	int width;
 	int height;
+	int line_gap; // pixel fonts only: blank pixel rows below every line (decision 050). The loaders leave it 0
 	uint8_t glyph[FONT_GLYPHS][16];
 } Font;
 

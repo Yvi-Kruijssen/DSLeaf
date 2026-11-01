@@ -99,6 +99,7 @@ static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 // error box is shown.
 static bool open_book(const char *path) {
 	font_load_named(&reading_font, config.font); // falls back to the built-in font
+	reading_font.line_gap = config.line_spacing;  // only pixel fonts use it (decision 050)
 	int cols, rows;
 	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
 	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent };
@@ -295,7 +296,7 @@ static void update_settings(uint32_t actions) {
 	SettingsEvent e = settings_update(&settings_menu, &config, actions);
 
 	if (e.kind == SETTINGS_EVENT_CHANGED) {
-		if (e.setting == SETTING_THEME) render_set_theme(config.theme); // the rest apply to the next book
+		if (e.setting == SETTING_THEME || e.setting == SETTING_RESET) render_set_theme(config.theme); // the rest apply to the next book
 		save_failed = !config_save(&config);
 		settings_menu.redraw = true;
 	} else if (e.kind == SETTINGS_EVENT_BACK) {

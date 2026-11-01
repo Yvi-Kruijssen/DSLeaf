@@ -17,10 +17,12 @@ const char *settings_label(Setting s) {
 	case SETTING_SCREEN: return "Screen mode";
 	case SETTING_THEME:  return "Theme";
 	case SETTING_FONT:   return "Font";
+	case SETTING_LINE:   return "Line spacing";
 	case SETTING_ORIENTATION: return "Orientation";
 	case SETTING_GAP:    return "Para spacing";
 	case SETTING_INDENT: return "Indent";
 	case SETTING_MARGIN: return "Margins";
+	case SETTING_RESET:  return "Reset all";
 	default:             return "";
 	}
 }
@@ -73,6 +75,8 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 	case SETTING_GAP:    plural(out, cap, c->paragraph_gap, "line", "lines"); break;
 	case SETTING_INDENT: plural(out, cap, c->paragraph_indent, "col", "cols"); break;
 	case SETTING_MARGIN: plural(out, cap, c->margin, "col", "cols"); break;
+	case SETTING_LINE:   plural(out, cap, c->line_spacing, "px", "px"); break;
+	case SETTING_RESET:  snprintf(out, cap, "%s", m->confirm_reset ? "Sure? Press A" : "Press A"); break;
 	default:             if (cap > 0) out[0] = '\0'; break;
 	}
 }
@@ -107,6 +111,14 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		*line1 = "Empty columns left and right.";
 		*line2 = "Used when a book is opened.";
 		break;
+	case SETTING_LINE:
+		*line1 = "Extra pixels between lines.";
+		*line2 = "Pixel fonts. Next book.";
+		break;
+	case SETTING_RESET:
+		*line1 = "Put every setting back to its";
+		*line2 = "default. Press A twice.";
+		break;
 	default:
 		*line1 = *line2 = "";
 		break;
@@ -132,6 +144,7 @@ static void change(SettingsMenu *m, Config *c, Setting s, int delta) {
 	case SETTING_GAP:    c->paragraph_gap = (uint8_t)wrap(c->paragraph_gap, delta, CONFIG_GAP_MAX + 1); break;
 	case SETTING_INDENT: c->paragraph_indent = (uint8_t)wrap(c->paragraph_indent, delta, CONFIG_INDENT_MAX + 1); break;
 	case SETTING_MARGIN: c->margin = (uint8_t)wrap(c->margin, delta, CONFIG_MARGIN_MAX + 1); break;
+	case SETTING_LINE:   c->line_spacing = (uint8_t)wrap(c->line_spacing, delta, CONFIG_LINE_MAX + 1); break;
 	default: break;
 	}
 }
@@ -139,8 +152,27 @@ static void change(SettingsMenu *m, Config *c, Setting s, int delta) {
 SettingsEvent settings_update(SettingsMenu *m, Config *c, uint32_t actions) {
 	SettingsEvent e = { SETTINGS_EVENT_NONE, SETTING_SCREEN };
 
+	if (actions == 0) return e; // an idle frame keeps the question open
+
+	bool armed = m->confirm_reset;
+	m->confirm_reset = false; // any key but a second A on Reset cancels it
+	if (armed) m->redraw = true;
+
 	if (actions & ACT_BACK) {
 		e.kind = SETTINGS_EVENT_BACK;
+		return e;
+	}
+	if (m->selected == SETTING_RESET && (actions & (ACT_LEFT | ACT_RIGHT | ACT_CONFIRM))) {
+		if (actions & ACT_CONFIRM) {
+			if (armed) {
+				config_set_defaults(c);
+				e.kind = SETTINGS_EVENT_CHANGED;
+				e.setting = SETTING_RESET;
+			} else {
+				m->confirm_reset = true;
+			}
+			m->redraw = true;
+		}
 		return e;
 	}
 	if (actions & ACT_UP) {

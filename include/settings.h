@@ -17,16 +17,19 @@ typedef enum {
 	SETTING_SCREEN,  // dual or single
 	SETTING_THEME,
 	SETTING_FONT,
+	SETTING_LINE,    // extra pixel rows between lines (pixel fonts only)
 	SETTING_ORIENTATION, // normal or rotated reading
 	SETTING_GAP,     // blank lines between paragraphs
 	SETTING_INDENT,  // first-line indent
 	SETTING_MARGIN,  // empty columns at each side
+	SETTING_RESET,   // back to the defaults (asks for a second A)
 	SETTING_COUNT,
 } Setting;
 
 typedef struct {
 	int selected;
 	bool redraw;                       // something changed on screen
+	bool confirm_reset;                // A was pressed once on Reset
 	FontChoice fonts[FONT_CHOICES_MAX];
 	int font_count;
 } SettingsMenu;
