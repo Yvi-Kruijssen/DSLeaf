@@ -2,14 +2,25 @@
 
 #include <nds.h>
 
+#include "pixbuf.h"
 #include "text.h"
 
 #define GRID_W 32 // tile map is 32x32, the visible area is 32x24
-#define TILE_MAP_BASE 4 // in 2 KB units, after the 8 KB of tile data at 0
+#define TILE_MAP_BASE 8 // in 2 KB units, after the 16 KB of tile data at 0 (256 glyphs of up to 2 tiles)
+#define BITMAP_BASE 2   // in 16 KB units: the 64 KB bitmap layer starts at 32 KB, after the tiles and the map
 
 static const Font *font;
 static bool rotated;
-static bool inverted;
+static bool pixel; // the font is drawn into the bitmap layer instead of with tiles
+static Theme theme;
+
+// The bitmap layer: text is drawn into a buffer in main RAM, then copied to VRAM,
+// which only takes 16 and 32 bit writes. Pixel values are palette entries, 0 is
+// the background and a style's text colour is style * 16 + 1.
+static uint8_t fb[2][PIX_W * PIX_H] __attribute__((aligned(4)));
+static bool fb_dirty[2];
+static u16 *bitmap[2];
+static int bitmap_id[2];
 
 static u16 *map[2];
 static u16 *gfx[2];
@@ -19,19 +30,25 @@ static int bg_id[2];
 typedef struct {
 	u16 bg;
 	u16 fg[STYLE_COUNT];
-} Theme;
+} Palette;
 
-static const Theme light = {
-	RGB15(30, 29, 25),
-	{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7) },
-};
-static const Theme dark = {
-	RGB15(2, 5, 3),
-	{ RGB15(30, 29, 25), RGB15(15, 18, 14), RGB15(31, 10, 10), RGB15(14, 26, 12) },
+static const Palette palettes[THEME_COUNT] = {
+	[THEME_NORMAL] = {
+		RGB15(30, 29, 25),
+		{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7) },
+	},
+	[THEME_DARK] = {
+		RGB15(2, 5, 3),
+		{ RGB15(30, 29, 25), RGB15(15, 18, 14), RGB15(31, 10, 10), RGB15(14, 26, 12) },
+	},
+	[THEME_SEPIA] = {
+		RGB15(27, 24, 18),
+		{ RGB15(7, 5, 3), RGB15(15, 12, 9), RGB15(17, 5, 4), RGB15(12, 8, 3) },
+	},
 };
 
 static void apply_theme(void) {
-	const Theme *t = inverted ? &dark : &light;
+	const Palette *t = &palettes[theme];
 	for (int s = 0; s < 2; s++) {
 		for (int style = 0; style < STYLE_COUNT; style++) {
 			palette[s][style * 16 + 0] = t->bg;
@@ -40,16 +57,28 @@ static void apply_theme(void) {
 	}
 }
 
-// VRAM only takes 16 and 32 bit writes, so copy tiles word by word.
+// Tiles used by one glyph: a tall font (16 rows) uses two stacked tiles.
+static int tiles_per_glyph(void) { return font && font->height == 16 ? 2 : 1; }
+
+// VRAM only takes 16 and 32 bit writes, so copy tiles word by word. Tile
+// number g * tiles_per_glyph is the first tile of glyph g.
 static void upload_tiles(void) {
+	int per = tiles_per_glyph();
 	for (int s = 0; s < 2; s++) {
 		volatile u32 *dst = (volatile u32 *)gfx[s];
 		for (int g = 0; g < FONT_GLYPHS; g++) {
-			uint32_t tile[8];
-			font_glyph_to_tile(font->glyph[g], rotated, tile);
-			for (int i = 0; i < 8; i++) dst[g * 8 + i] = tile[i];
+			uint32_t tiles[16];
+			int n = font_glyph_to_tiles(font, g, rotated, tiles);
+			for (int i = 0; i < n * 8; i++) dst[g * per * 8 + i] = tiles[i];
 		}
 	}
+}
+
+// Shows the tile layer or the bitmap layer on both screens, not both.
+static void show_layer(void) {
+	u32 layer = pixel ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
+	videoSetMode(MODE_5_2D | layer);
+	videoSetModeSub(MODE_5_2D | layer);
 }
 
 void render_init(void) {
@@ -58,16 +87,19 @@ void render_init(void) {
 
 	vramSetBankA(VRAM_A_MAIN_BG);
 	vramSetBankC(VRAM_C_SUB_BG);
-	videoSetMode(MODE_0_2D | DISPLAY_BG0_ACTIVE);
-	videoSetModeSub(MODE_0_2D | DISPLAY_BG0_ACTIVE);
+	show_layer();
 
 	bg_id[SCREEN_TOP] = bgInit(0, BgType_Text4bpp, BgSize_T_256x256, TILE_MAP_BASE, 0);
 	bg_id[SCREEN_BOTTOM] = bgInitSub(0, BgType_Text4bpp, BgSize_T_256x256, TILE_MAP_BASE, 0);
+	bitmap_id[SCREEN_TOP] = bgInit(2, BgType_Bmp8, BgSize_B8_256x256, BITMAP_BASE, 0);
+	bitmap_id[SCREEN_BOTTOM] = bgInitSub(2, BgType_Bmp8, BgSize_B8_256x256, BITMAP_BASE, 0);
 
 	for (int s = 0; s < 2; s++) {
 		map[s] = bgGetMapPtr(bg_id[s]);
 		gfx[s] = bgGetGfxPtr(bg_id[s]);
+		bitmap[s] = bgGetGfxPtr(bitmap_id[s]);
 	}
+	bgUpdate(); // writes the (unscaled) transform of the bitmap layers
 	palette[SCREEN_TOP] = BG_PALETTE;
 	palette[SCREEN_BOTTOM] = BG_PALETTE_SUB;
 
@@ -75,44 +107,84 @@ void render_init(void) {
 }
 
 void render_clear(Screen screen) {
-	u16 blank = ' ';
+	if (pixel) {
+		memset(fb[screen], 0, sizeof fb[screen]);
+		fb_dirty[screen] = true;
+		return;
+	}
+	u16 blank = (u16)(' ' * tiles_per_glyph()); // the space glyph is empty
 	for (int i = 0; i < GRID_W * GRID_W; i++) map[screen][i] = blank;
+}
+
+// Copies the buffer of a screen to the bitmap layer, if it changed.
+void render_present(Screen screen) {
+	if (!pixel || !fb_dirty[screen]) return;
+	fb_dirty[screen] = false;
+
+	volatile u32 *dst = (volatile u32 *)bitmap[screen];
+	const u32 *src = (const u32 *)fb[screen];
+	for (int i = 0; i < PIX_W * PIX_H / 4; i++) dst[i] = src[i];
+}
+
+static void restart(void) {
+	pixel = font && !font_is_tile(font);
+	if (font && !pixel) upload_tiles();
+	show_layer();
+	render_clear(SCREEN_TOP);
+	render_clear(SCREEN_BOTTOM);
+	render_present(SCREEN_TOP);
+	render_present(SCREEN_BOTTOM);
 }
 
 void render_set_font(const Font *new_font) {
 	font = new_font;
-	upload_tiles();
-	render_clear(SCREEN_TOP);
-	render_clear(SCREEN_BOTTOM);
+	restart();
 }
 
 void render_set_rotated(bool value) {
 	rotated = value;
-	if (font) upload_tiles();
-	render_clear(SCREEN_TOP);
-	render_clear(SCREEN_BOTTOM);
+	restart();
 }
 
 bool render_is_rotated(void) { return rotated; }
 
-void render_set_inverted(bool value) {
-	inverted = value;
+void render_set_theme(Theme value) {
+	theme = value < THEME_COUNT ? value : THEME_NORMAL;
 	if (palette[0]) apply_theme();
 }
 
-bool render_is_inverted(void) { return inverted; }
+Theme render_theme(void) { return theme; }
 
-int render_cols(void) { return rotated ? 24 : 32; }
-int render_rows(void) { return rotated ? 32 : 24; }
+int render_cols(void) { return pixel ? pix_cols(font, rotated) : (rotated ? 24 : 32); }
+int render_rows(void) { return pixel ? pix_rows(font, rotated) : (rotated ? 32 : 24) / tiles_per_glyph(); }
 
 void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 	if (col < 0 || col >= render_cols() || row < 0 || row >= render_rows()) return;
 
+	if (pixel) {
+		pix_draw_glyph(fb[screen], font, rotated, col, row, glyph, (uint8_t)(style * 16 + 1));
+		fb_dirty[screen] = true;
+		return;
+	}
+
+	int per = tiles_per_glyph();
+	u16 tile = (u16)(glyph * per) | (u16)(style << 12);
+
+	if (!rotated) {
+		// A tall glyph is two tiles, one above the other.
+		int y = row * per;
+		map[screen][y * GRID_W + col] = tile;
+		if (per == 2) map[screen][(y + 1) * GRID_W + col] = tile + 1;
+		return;
+	}
+
 	// Rotated: the page runs down the screen, so a page column becomes a
-	// screen row and page rows count from the right-hand edge.
-	int x = rotated ? 31 - row : col;
-	int y = rotated ? col : row;
-	map[screen][y * GRID_W + x] = glyph | (style << 12);
+	// screen row and page rows count from the right-hand edge. A tall glyph
+	// turned on its side is two tiles side by side, the left one first.
+	int y = col;
+	int x = GRID_W - per * (row + 1);
+	map[screen][y * GRID_W + x] = tile;
+	if (per == 2) map[screen][y * GRID_W + x + 1] = tile + 1;
 }
 
 int render_puts(Screen screen, int col, int row, const char *str, Style style) {

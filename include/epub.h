@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "textx.h"
 #include "zip.h"
@@ -33,6 +34,7 @@ typedef struct {
 	bool toc_is_nav;                     // true for an EPUB 3 nav document, false for NCX
 	int chapter_count;
 	char (*chapter)[EPUB_PATH_MAX];      // zip paths in reading order, allocated by epub_open
+	uint32_t *chapter_size;              // uncompressed size of each chapter file, in bytes
 	int skipped;                         // spine entries that could not be used
 } Epub;
 
@@ -57,6 +59,11 @@ bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter);
 // Next item. Returns false after the END item.
 bool epub_chapter_next(EpubChapter *chapter, TextItem *item);
 void epub_chapter_close(EpubChapter *chapter);
+
+// True if chapter `index` has at least one word of text. Chapters that only
+// hold a picture (cover pages, for example) give false. Cheap: stops at the
+// first word.
+bool epub_chapter_has_text(Epub *book, int index);
 
 // Short reason for the error box, at most 24 characters.
 const char *epub_error_text(EpubResult result);

@@ -116,3 +116,15 @@ FILE *storage_fopen(const char *path, const char *mode) {
 	if (!full_path(full, path, "")) return NULL;
 	return fopen(full, mode);
 }
+
+int storage_read_file(const char *path, uint8_t *buf, size_t cap) {
+	char full[PATH_CAP];
+	if (!full_path(full, path, "")) return -1;
+
+	FILE *f = fopen(full, "rb");
+	if (!f) return -1;
+	size_t n = fread(buf, 1, cap, f);
+	bool failed = ferror(f);
+	fclose(f);
+	return failed ? -1 : (int)n;
+}

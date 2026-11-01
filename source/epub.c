@@ -345,7 +345,8 @@ EpubResult epub_open(Epub *book, const char *path) {
 		goto fail;
 	}
 	book->chapter = malloc(sizeof *book->chapter * (size_t)pkg.idref_count);
-	if (!book->chapter) {
+	book->chapter_size = malloc(sizeof *book->chapter_size * (size_t)pkg.idref_count);
+	if (!book->chapter || !book->chapter_size) {
 		result = EPUB_ERR_MEMORY;
 		goto fail;
 	}
@@ -360,6 +361,7 @@ EpubResult epub_open(Epub *book, const char *path) {
 			book->skipped++;
 			continue;
 		}
+		book->chapter_size[book->chapter_count] = entry.size;
 		memcpy(book->chapter[book->chapter_count++], resolved, sizeof resolved);
 	}
 	if (book->chapter_count == 0) {
@@ -396,14 +398,18 @@ fail:
 	free(pkg.manifest);
 	free(pkg.idref);
 	free(book->chapter);
+	free(book->chapter_size);
 	book->chapter = NULL;
+	book->chapter_size = NULL;
 	zip_close(&book->zip);
 	return result;
 }
 
 void epub_close(Epub *book) {
 	free(book->chapter);
+	free(book->chapter_size);
 	book->chapter = NULL;
+	book->chapter_size = NULL;
 	zip_close(&book->zip);
 }
 
@@ -426,4 +432,17 @@ bool epub_chapter_next(EpubChapter *chapter, TextItem *item) {
 
 void epub_chapter_close(EpubChapter *chapter) {
 	zip_stream_close(&chapter->stream);
+}
+
+bool epub_chapter_has_text(Epub *book, int index) {
+	static EpubChapter chapter; // too big for the stack
+	if (!epub_chapter_open(book, index, &chapter)) return false;
+
+	bool found = false;
+	TextItem item;
+	while (!found && epub_chapter_next(&chapter, &item)) {
+		if (item.kind == TEXT_WORD) found = true;
+	}
+	epub_chapter_close(&chapter);
+	return found;
 }

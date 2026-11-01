@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "theme.h"
+
 #define CONFIG_PATH "/DSLeaf/config.txt"
 #define CONFIG_FONT_MAX 64 // file name in /DSLeaf/Fonts, or "default"
 
@@ -15,14 +17,15 @@ typedef enum {
 
 typedef struct {
 	DisplayMode display;
-	bool invert;
+	Theme theme;
 	bool rotate;
 	char font[CONFIG_FONT_MAX];
 } Config;
 
 void config_set_defaults(Config *config);
 
-// Reads settings from text. Unknown keys, bad values and bad lines are ignored,
+// Reads settings from text. `invert=0` and `invert=1` from older versions still
+// work and mean the normal and the dark theme. Unknown keys, bad values and bad lines are ignored,
 // so a damaged or hand-edited file never stops the app. Values not mentioned
 // keep what `config` already holds.
 void config_parse(Config *config, const char *text);

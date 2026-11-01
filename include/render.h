@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "font.h"
+#include "theme.h"
 
 typedef enum {
 	SCREEN_TOP,
@@ -29,22 +30,28 @@ typedef enum {
 void render_init(void);
 
 // Uses `font` for all text. The font must stay valid until it is replaced.
-// Existing screen contents are cleared.
+// Existing screen contents are cleared. Fonts that are 8 wide and 8 or 16 high
+// use the tile layer, any other size uses the bitmap layer.
 void render_set_font(const Font *font);
 
 // Switches between the normal and the rotated grid, and clears both screens.
 void render_set_rotated(bool rotated);
 bool render_is_rotated(void);
 
-// Swaps between the light and the dark colour theme (decision 017).
-void render_set_inverted(bool inverted);
-bool render_is_inverted(void);
+// Sets the colour theme for both screens (decision 042).
+void render_set_theme(Theme theme);
+Theme render_theme(void);
 
 // Current grid size, which depends on the rotation.
 int render_cols(void);
 int render_rows(void);
 
 void render_clear(Screen screen);
+
+// Makes what was drawn visible. Fonts drawn pixel by pixel are copied to the
+// screen here, once per change. Tile fonts show at once, so this does nothing
+// for them. Call it for both screens after drawing a frame.
+void render_present(Screen screen);
 
 // Draws one glyph (a Latin-1 code). Cells outside the grid are ignored.
 void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style);

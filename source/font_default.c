@@ -13,7 +13,10 @@ void font_load_default(Font *font) {
 	                   == FONT_GLYPHS * 8,
 	               "font8x8 sets must cover U+0000..U+00FF");
 
-	memcpy(&font->glyph[0x00], font8x8_basic, sizeof(font8x8_basic));
-	memcpy(&font->glyph[0x80], font8x8_control, sizeof(font8x8_control));
-	memcpy(&font->glyph[0xA0], font8x8_ext_latin, sizeof(font8x8_ext_latin));
+	memset(font, 0, sizeof *font);
+	font->width = 8;
+	font->height = 8;
+	for (int g = 0; g < 128; g++) memcpy(font->glyph[g], font8x8_basic[g], 8);
+	for (int g = 0; g < 32; g++) memcpy(font->glyph[0x80 + g], font8x8_control[g], 8);
+	for (int g = 0; g < 96; g++) memcpy(font->glyph[0xA0 + g], font8x8_ext_latin[g], 8);
 }

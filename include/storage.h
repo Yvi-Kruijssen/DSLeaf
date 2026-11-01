@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #define STORAGE_APP_DIR   "/DSLeaf"
@@ -29,6 +30,10 @@ void storage_set_root(const char *root);
 // If the file is missing but "<path>.tmp" exists (a save was interrupted
 // between removing the old file and renaming the new one), the .tmp is used.
 int storage_read_text(const char *path, char *buf, size_t cap);
+
+// Reads a binary file into `buf` (no terminating NUL). At most `cap` bytes are
+// read. Returns the number of bytes, or -1 if the file cannot be read.
+int storage_read_file(const char *path, uint8_t *buf, size_t cap);
 
 // Writes `text` safely: to "<path>.tmp" first, then the old file is replaced.
 // A failure leaves the old file or the complete .tmp in place, never a

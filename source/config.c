@@ -10,7 +10,7 @@
 
 void config_set_defaults(Config *c) {
 	c->display = DISPLAY_DUAL;
-	c->invert = false;
+	c->theme = THEME_NORMAL;
 	c->rotate = false;
 	snprintf(c->font, sizeof c->font, "default");
 }
@@ -44,8 +44,12 @@ static void apply(Config *c, const char *key, const char *value) {
 	if (strcmp(key, "screen_mode") == 0) {
 		if (strcmp(value, "single") == 0) c->display = DISPLAY_SINGLE;
 		else if (strcmp(value, "dual") == 0) c->display = DISPLAY_DUAL;
-	} else if (strcmp(key, "invert") == 0) {
-		if (parse_bool(value, &b)) c->invert = b;
+	} else if (strcmp(key, "theme") == 0) {
+		if (strcmp(value, "normal") == 0 || strcmp(value, "light") == 0) c->theme = THEME_NORMAL;
+		else if (strcmp(value, "dark") == 0) c->theme = THEME_DARK;
+		else if (strcmp(value, "sepia") == 0) c->theme = THEME_SEPIA;
+	} else if (strcmp(key, "invert") == 0) { // older versions
+		if (parse_bool(value, &b)) c->theme = b ? THEME_DARK : THEME_NORMAL;
 	} else if (strcmp(key, "rotate") == 0) {
 		if (parse_bool(value, &b)) c->rotate = b;
 	} else if (strcmp(key, "font") == 0) {
@@ -74,8 +78,9 @@ void config_parse(Config *c, const char *text) {
 
 int config_format(const Config *c, char *buf, size_t cap) {
 	int n = snprintf(buf, cap,
-	                 "screen_mode=%s\ninvert=%d\nfont=%s\nrotate=%d\n",
-	                 c->display == DISPLAY_SINGLE ? "single" : "dual", c->invert ? 1 : 0, c->font,
+	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\n",
+	                 c->display == DISPLAY_SINGLE ? "single" : "dual",
+	                 c->theme == THEME_DARK ? "dark" : c->theme == THEME_SEPIA ? "sepia" : "normal", c->font,
 	                 c->rotate ? 1 : 0);
 	return (n < 0 || (size_t)n >= cap) ? -1 : n;
 }

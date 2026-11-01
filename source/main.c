@@ -10,17 +10,20 @@
 #include "library.h"
 #include "main_menu.h"
 #include "message_box.h"
+#include "reader.h"
 #include "recent.h"
 #include "render.h"
 #include "storage.h"
 
-typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY } AppScreen;
+typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER } AppScreen;
 
-static Font font;
+static Font ui_font;      // the menus always use the built-in font
+static Font reading_font; // the book uses the font from the settings
 static Config config;
 static RecentList recent;
 static MainMenu menu;
 static Library library; // large, so not on the stack
+static Reader reader;   // the open book while reading
 static AppScreen current = SCREEN_MAIN_MENU;
 static bool box_visible;
 static bool save_failed;
@@ -42,7 +45,8 @@ static void report(const char *line1, const char *line2) {
 	}
 	snprintf(buf, sizeof buf, "Mode: %s", config.display == DISPLAY_SINGLE ? "single" : "dual");
 	render_puts(SCREEN_TOP, 1, 11, buf, STYLE_DIM);
-	snprintf(buf, sizeof buf, "Invert: %s  Font: %s", config.invert ? "yes" : "no", config.font);
+	snprintf(buf, sizeof buf, "Theme: %s  Font: %s",
+	         config.theme == THEME_DARK ? "dark" : config.theme == THEME_SEPIA ? "sepia" : "normal", config.font);
 	render_puts(SCREEN_TOP, 1, 12, buf, STYLE_DIM);
 	snprintf(buf, sizeof buf, "Recent books: %d", recent.count);
 	render_puts(SCREEN_TOP, 1, 13, buf, STYLE_DIM);
@@ -71,30 +75,41 @@ static void show_error(const char *path, EpubResult result) {
 	box_visible = true;
 }
 
-// Tries to open a book. Returns true if it worked. A real reader will take over here.
+static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
+
+// Opens a book and starts reading it. Returns true if it worked. On failure an
+// error box is shown.
 static bool open_book(const char *path) {
-	static Epub book; // holds the chapter list, so keep it off the stack
-	EpubResult result = epub_open(&book, path);
+	font_load_named(&reading_font, config.font); // falls back to the built-in font
+	int cols, rows;
+	reader_geometry(&reading_font, &cols, &rows);
+
+	EpubResult result = reader_open(&reader, path, 0, 0, cols, rows, dual_screen() ? 2 : 1);
 	if (result != EPUB_OK) {
 		show_error(path, result);
 		return false;
 	}
-
-	char title[EPUB_TITLE_MAX + 8], chapters[32];
-	snprintf(title, sizeof title, "Title: %s", book.title[0] ? book.title : "(none)");
-	snprintf(chapters, sizeof chapters, "Chapters: %d", book.chapter_count);
-	epub_close(&book);
+	render_set_font(&reading_font); // also clears both screens
 
 	recent_touch(&recent, path);
 	save_recent();
 	rebuild_menu();
-	report(title, chapters);
+
+	current = SCREEN_READER;
+	input_set_context(INPUT_READING);
+	reader.redraw = true;
 	return true;
 }
 
 static void show_main_menu(void) {
+	if (current == SCREEN_READER) {
+		reader_close(&reader);
+		render_set_font(&ui_font);
+	}
 	current = SCREEN_MAIN_MENU;
+	input_set_context(INPUT_MENU);
 	main_menu_invalidate(&menu);
+	report("Waiting for input", ""); // the top screen shows the logo later
 }
 
 static void show_library(void) {
@@ -140,14 +155,27 @@ static void update_library(uint32_t actions, bool tapped, int x, int y) {
 
 		bool ok = open_book(path);
 		library_set_failed(&library, e.index, !ok);
-		if (ok) show_main_menu(); // the book is now first in Recent Reads
 	}
+}
+
+static void update_reader(uint32_t actions) {
+	if (actions & ACT_NEXT_PAGE) reader_next(&reader);
+	if (actions & ACT_PREV_PAGE) reader_prev(&reader);
+
+	if (actions & ACT_INVERT) {
+		// B cycles through the themes: normal, dark, sepia (decision 042).
+		config.theme = (Theme)((config.theme + 1) % THEME_COUNT);
+		render_set_theme(config.theme);
+		save_failed = !config_save(&config);
+		reader.redraw = true;
+	}
+	if (actions & ACT_MENU) show_main_menu();
 }
 
 int main(void) {
 	render_init();
-	font_load_default(&font);
-	render_set_font(&font);
+	font_load_default(&ui_font);
+	render_set_font(&ui_font);
 	render_set_rotated(false); // menus are never rotated (decision 027)
 	input_init();
 	input_set_context(INPUT_MENU);
@@ -155,7 +183,7 @@ int main(void) {
 	storage_init();
 	config_load(&config);
 	recent_load(&recent);
-	render_set_inverted(config.invert);
+	render_set_theme(config.theme);
 	rebuild_menu();
 
 	report("Waiting for input", "");
@@ -177,14 +205,19 @@ int main(void) {
 			}
 		} else if (current == SCREEN_MAIN_MENU) {
 			update_main_menu(actions, tapped, x, y);
-		} else {
+		} else if (current == SCREEN_LIBRARY) {
 			update_library(actions, tapped, x, y);
+		} else {
+			update_reader(actions);
 		}
 
 		if (!box_visible) {
 			if (current == SCREEN_MAIN_MENU) main_menu_draw(&menu, SCREEN_BOTTOM);
-			else library_draw(&library, SCREEN_BOTTOM);
+			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
+			else reader_draw(&reader, dual_screen());
 		}
+		render_present(SCREEN_TOP);
+		render_present(SCREEN_BOTTOM);
 	}
 
 	return 0;
