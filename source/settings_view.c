@@ -28,7 +28,7 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 		char value[48], shown[64];
 		settings_value_text(m, c, (Setting)i, value, sizeof value);
 		if (strlen(value) > 14) value[14] = '\0';
-		if (i == SETTING_RESET) snprintf(shown, sizeof shown, "%s", value);
+		if (i == SETTING_RESET || i == SETTING_PREVIEW) snprintf(shown, sizeof shown, "%s", value);
 		else snprintf(shown, sizeof shown, "< %s >", value);
 
 		if (selected) render_putc(screen, 1, row, '>', STYLE_HIGHLIGHT);

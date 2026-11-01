@@ -10,6 +10,7 @@
 #include "library.h"
 #include "main_menu.h"
 #include "message_box.h"
+#include "preview.h"
 #include "reader.h"
 #include "recent.h"
 #include "render.h"
@@ -18,7 +19,7 @@
 #include "storage.h"
 #include "toc.h"
 
-typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS } AppScreen;
+typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS, SCREEN_PREVIEW } AppScreen;
 
 static Font ui_font;      // the menus always use the built-in font
 static Font reading_font; // the book uses the font from the settings
@@ -167,6 +168,29 @@ static void show_settings(void) {
 	current = SCREEN_SETTINGS;
 }
 
+// The sample page of the Settings screen, laid out like a book would be.
+static Preview preview; // 4 KB, kept off the stack
+
+static void show_preview(void) {
+	font_load_named(&reading_font, config.font);
+	reading_font.line_gap = config.line_spacing;
+	int cols, rows;
+	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
+	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent };
+	preview_build(&preview, cols, rows, dual_screen() ? 2 : 1, &style);
+	if (dual_screen()) hide_top_logo(); // the top screen shows the first page
+	render_set_view(&reading_font, config.rotate);
+	preview_draw(&preview);
+	current = SCREEN_PREVIEW;
+}
+
+static void close_preview(void) {
+	render_set_view(&ui_font, false);
+	show_top_logo();
+	settings_menu.redraw = true;
+	current = SCREEN_SETTINGS;
+}
+
 static void show_library(void) {
 	library_scan(&library);
 	current = SCREEN_LIBRARY;
@@ -299,6 +323,8 @@ static void update_settings(uint32_t actions) {
 		if (e.setting == SETTING_THEME || e.setting == SETTING_RESET) render_set_theme(config.theme); // the rest apply to the next book
 		save_failed = !config_save(&config);
 		settings_menu.redraw = true;
+	} else if (e.kind == SETTINGS_EVENT_PREVIEW) {
+		show_preview();
 	} else if (e.kind == SETTINGS_EVENT_BACK) {
 		show_main_menu();
 	}
@@ -397,6 +423,8 @@ int main(void) {
 			update_library(actions, tapped, x, y);
 		} else if (current == SCREEN_SETTINGS) {
 			update_settings(actions);
+		} else if (current == SCREEN_PREVIEW) {
+			if (actions || tapped) close_preview(); // any key or a tap goes back
 		} else {
 			update_reader(actions);
 		}
@@ -405,6 +433,7 @@ int main(void) {
 			if (current == SCREEN_MAIN_MENU) main_menu_draw(&menu, SCREEN_BOTTOM);
 			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
 			else if (current == SCREEN_SETTINGS) settings_draw(&settings_menu, &config, SCREEN_BOTTOM);
+			else if (current == SCREEN_PREVIEW) { /* drawn once when it opened */ }
 			else if (reader_draw(&reader, dual_screen(), &marks) && bm_open) {
 				if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, marks.count, SCREEN_BOTTOM);
 				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);

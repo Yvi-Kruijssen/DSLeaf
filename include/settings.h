@@ -22,6 +22,7 @@ typedef enum {
 	SETTING_GAP,     // blank lines between paragraphs
 	SETTING_INDENT,  // first-line indent
 	SETTING_MARGIN,  // empty columns at each side
+	SETTING_PREVIEW, // shows a sample page (A)
 	SETTING_RESET,   // back to the defaults (asks for a second A)
 	SETTING_COUNT,
 } Setting;
@@ -37,6 +38,7 @@ typedef struct {
 typedef enum {
 	SETTINGS_EVENT_NONE,
 	SETTINGS_EVENT_CHANGED, // `setting` has a new value in the config
+	SETTINGS_EVENT_PREVIEW, // show the sample page
 	SETTINGS_EVENT_BACK,
 } SettingsEventKind;
 

@@ -22,6 +22,7 @@ const char *settings_label(Setting s) {
 	case SETTING_GAP:    return "Para spacing";
 	case SETTING_INDENT: return "Indent";
 	case SETTING_MARGIN: return "Margins";
+	case SETTING_PREVIEW: return "Preview page";
 	case SETTING_RESET:  return "Reset all";
 	default:             return "";
 	}
@@ -76,6 +77,7 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 	case SETTING_INDENT: plural(out, cap, c->paragraph_indent, "col", "cols"); break;
 	case SETTING_MARGIN: plural(out, cap, c->margin, "col", "cols"); break;
 	case SETTING_LINE:   plural(out, cap, c->line_spacing, "px", "px"); break;
+	case SETTING_PREVIEW: snprintf(out, cap, "Press A"); break;
 	case SETTING_RESET:  snprintf(out, cap, "%s", m->confirm_reset ? "Sure? Press A" : "Press A"); break;
 	default:             if (cap > 0) out[0] = '\0'; break;
 	}
@@ -114,6 +116,10 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 	case SETTING_LINE:
 		*line1 = "Extra pixels between lines.";
 		*line2 = "Pixel fonts. Next book.";
+		break;
+	case SETTING_PREVIEW:
+		*line1 = "Sample page, current settings.";
+		*line2 = "Any key goes back.";
 		break;
 	case SETTING_RESET:
 		*line1 = "Put every setting back to its";
@@ -160,6 +166,13 @@ SettingsEvent settings_update(SettingsMenu *m, Config *c, uint32_t actions) {
 
 	if (actions & ACT_BACK) {
 		e.kind = SETTINGS_EVENT_BACK;
+		return e;
+	}
+	if (m->selected == SETTING_PREVIEW && (actions & (ACT_LEFT | ACT_RIGHT | ACT_CONFIRM))) {
+		if (actions & ACT_CONFIRM) {
+			e.kind = SETTINGS_EVENT_PREVIEW;
+			e.setting = SETTING_PREVIEW;
+		}
 		return e;
 	}
 	if (m->selected == SETTING_RESET && (actions & (ACT_LEFT | ACT_RIGHT | ACT_CONFIRM))) {
