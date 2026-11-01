@@ -122,11 +122,17 @@ int render_puts(Screen screen, int col, int row, const char *str, Style style) {
 	return col;
 }
 
-int render_puts_utf8(Screen screen, int col, int row, const char *str, Style style) {
-	while (*str && col < render_cols()) {
+int render_puts_utf8_clip(Screen screen, int col, int row, const char *str, Style style,
+                          int end_col) {
+	if (end_col > render_cols()) end_col = render_cols();
+	while (*str && col < end_col) {
 		uint8_t glyphs[3];
 		int n = text_utf8_next(&str, glyphs);
-		for (int i = 0; i < n; i++) render_putc(screen, col++, row, glyphs[i], style);
+		for (int i = 0; i < n && col < end_col; i++) render_putc(screen, col++, row, glyphs[i], style);
 	}
 	return col;
+}
+
+int render_puts_utf8(Screen screen, int col, int row, const char *str, Style style) {
+	return render_puts_utf8_clip(screen, col, row, str, style, render_cols());
 }

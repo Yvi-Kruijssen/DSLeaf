@@ -56,4 +56,8 @@ int render_puts(Screen screen, int col, int row, const char *str, Style style);
 // Same for UTF-8 text, using the fallback mapping in text.h.
 int render_puts_utf8(Screen screen, int col, int row, const char *str, Style style);
 
+// UTF-8 text that stops before column `end_col` instead of the grid edge.
+int render_puts_utf8_clip(Screen screen, int col, int row, const char *str, Style style,
+                          int end_col);
+
 #endif

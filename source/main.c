@@ -1,100 +1,62 @@
-// Input layer demo, replaced by the real app as it is built.
-// Menu context:    B switches to the reading context, Select exits.
-// Reading context: Start switches back to the menu, B inverts the colours.
-// The log shows each action as it happens.
+// Main menu with placeholder books. Library, Settings and opening a book are
+// not built yet, so they only report what would happen. Replaced by the real
+// app as it is built.
 #include <nds.h>
 #include <stdio.h>
-#include <string.h>
 
 #include "input.h"
+#include "main_menu.h"
 #include "render.h"
 
-#define LOG_LINES 14
-#define LOG_WIDTH 30
-
 static Font font;
-static char log_lines[LOG_LINES][LOG_WIDTH + 1];
-static int frame;
 
-static const InputAction all_actions[] = {
-	ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_CONFIRM, ACT_BACK, ACT_REMOVE,
-	ACT_NEXT_PAGE, ACT_PREV_PAGE, ACT_BOOKMARK, ACT_BOOKMARK_MENU, ACT_INVERT, ACT_MENU,
-};
-
-static void log_line(const char *text) {
-	memmove(log_lines[0], log_lines[1], sizeof(log_lines) - sizeof(log_lines[0]));
-	snprintf(log_lines[LOG_LINES - 1], sizeof(log_lines[0]), "%s", text);
-}
-
-static void draw(InputContext context, int taps) {
+static void report(const char *text) {
 	render_clear(SCREEN_TOP);
-	render_puts(SCREEN_TOP, 1, 0, "Input demo", STYLE_HIGHLIGHT);
-	render_puts(SCREEN_TOP, 1, 2, context == INPUT_MENU ? "Context: MENU" : "Context: READING",
-	            STYLE_NORMAL);
-	render_puts(SCREEN_TOP, 1, 3, context == INPUT_MENU
-	                                  ? "B reading  Select exit"
-	                                  : "Start menu  B invert",
-	            STYLE_DIM);
-	for (int i = 0; i < LOG_LINES; i++) {
-		render_puts(SCREEN_TOP, 1, 5 + i, log_lines[i], i == LOG_LINES - 1 ? STYLE_HIGHLIGHT : STYLE_NORMAL);
-	}
-
-	char buf[32];
-	render_clear(SCREEN_BOTTOM);
-	render_puts(SCREEN_BOTTOM, 1, 0, "Touch is optional", STYLE_HIGHLIGHT);
-	snprintf(buf, sizeof buf, "Taps: %d", taps);
-	render_puts(SCREEN_BOTTOM, 1, 2, buf, STYLE_NORMAL);
+	render_puts(SCREEN_TOP, 1, 1, "DSLeaf", STYLE_HIGHLIGHT);
+	render_puts(SCREEN_TOP, 1, 3, "Placeholder screen", STYLE_DIM);
+	render_puts_utf8(SCREEN_TOP, 1, 5, text, STYLE_NORMAL);
 }
 
 int main(void) {
 	render_init();
 	font_load_default(&font);
 	render_set_font(&font);
+	render_set_rotated(false); // menus are never rotated (decision 027)
 	input_init();
+	input_set_context(INPUT_MENU);
 
-	InputContext context = INPUT_MENU;
-	input_set_context(context);
-	int taps = 0;
-	log_line("Press buttons...");
-	draw(context, taps);
+	static const char *const books[] = {
+		"The Great Gatsby", "Alice in Wonderland", "Moby Dick",
+	};
+	MainMenu menu;
+	main_menu_init(&menu, books, 3);
+
+	report("Waiting for input");
 
 	while (pmMainLoop()) {
 		swiWaitForVBlank();
-		frame++;
 		input_update();
 
-		uint32_t actions = input_actions();
-		bool changed = false;
+		int x = 0, y = 0;
+		bool tapped = input_tap(&x, &y);
+		MainMenuEvent e = main_menu_update(&menu, input_actions(), tapped, x, y);
 
-		for (unsigned i = 0; i < sizeof all_actions / sizeof all_actions[0]; i++) {
-			if (!(actions & all_actions[i])) continue;
-			char buf[LOG_WIDTH + 1];
-			snprintf(buf, sizeof buf, "%5d %s", frame, input_action_name(all_actions[i]));
-			log_line(buf);
-			changed = true;
+		char buf[64];
+		switch (e.kind) {
+		case MENU_EVENT_OPEN_BOOK:
+			snprintf(buf, sizeof buf, "Open: %s", menu.title[e.index]);
+			report(buf);
+			break;
+		case MENU_EVENT_OPEN_LIBRARY:  report("Open the Library"); break;
+		case MENU_EVENT_OPEN_SETTINGS: report("Open Settings"); break;
+		case MENU_EVENT_REMOVE_BOOK:
+			snprintf(buf, sizeof buf, "Removed entry %d from the list", e.index + 1);
+			report(buf);
+			break;
+		case MENU_EVENT_NONE: break;
 		}
 
-		int x, y;
-		if (input_tap(&x, &y)) {
-			char buf[LOG_WIDTH + 1];
-			snprintf(buf, sizeof buf, "%5d TAP %d,%d", frame, x, y);
-			log_line(buf);
-			taps++;
-			changed = true;
-		}
-
-		if (context == INPUT_MENU && (actions & ACT_REMOVE)) break;
-		if (context == INPUT_MENU && (actions & ACT_BACK)) {
-			context = INPUT_READING;
-			input_set_context(context);
-		} else if (context == INPUT_READING && (actions & ACT_MENU)) {
-			context = INPUT_MENU;
-			input_set_context(context);
-		} else if (context == INPUT_READING && (actions & ACT_INVERT)) {
-			render_set_inverted(!render_is_inverted());
-		}
-
-		if (changed) draw(context, taps);
+		main_menu_draw(&menu, SCREEN_BOTTOM);
 	}
 
 	return 0;
