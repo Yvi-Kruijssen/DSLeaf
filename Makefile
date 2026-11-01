@@ -26,7 +26,7 @@ include $(DEVKITARM)/ds_rules
 TARGET   := DSLeaf
 BUILD    := build
 SOURCES  := source
-INCLUDES := include
+INCLUDES := include third_party/font8x8
 DATA     := data
 GRAPHICS :=
 AUDIO    :=
