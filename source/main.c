@@ -73,16 +73,22 @@ static void show_error(const char *path, EpubResult result) {
 
 // Tries to open a book. Returns true if it worked. A real reader will take over here.
 static bool open_book(const char *path) {
-	EpubResult result = epub_check(path);
+	static Epub book; // holds the chapter list, so keep it off the stack
+	EpubResult result = epub_open(&book, path);
 	if (result != EPUB_OK) {
 		show_error(path, result);
 		return false;
 	}
 
+	char title[EPUB_TITLE_MAX + 8], chapters[32];
+	snprintf(title, sizeof title, "Title: %s", book.title[0] ? book.title : "(none)");
+	snprintf(chapters, sizeof chapters, "Chapters: %d", book.chapter_count);
+	epub_close(&book);
+
 	recent_touch(&recent, path);
 	save_recent();
 	rebuild_menu();
-	report("Would open:", path);
+	report(title, chapters);
 	return true;
 }
 
