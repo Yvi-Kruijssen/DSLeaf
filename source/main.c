@@ -4,6 +4,8 @@
 #include <nds.h>
 #include <stdio.h>
 
+#include "bookmark_menu.h"
+#include "bookmarks.h"
 #include "config.h"
 #include "epub.h"
 #include "input.h"
@@ -24,6 +26,14 @@ static RecentList recent;
 static MainMenu menu;
 static Library library; // large, so not on the stack
 static Reader reader;   // the open book while reading
+static BookMarks marks; // the bookmarks and last position of the open book
+static char book_path[RECENT_PATH_MAX];
+static uint32_t book_size;
+static int turns_unsaved; // page turns since the position was last saved
+static BookmarkMenu bm_menu;
+static bool bm_open;     // the bookmark menu is showing
+
+#define SAVE_EVERY_TURNS 10 // how often the position is saved while reading
 static AppScreen current = SCREEN_MAIN_MENU;
 static bool box_visible;
 static bool save_failed;
@@ -84,11 +94,24 @@ static bool open_book(const char *path) {
 	int cols, rows;
 	reader_geometry(&reading_font, &cols, &rows);
 
-	EpubResult result = reader_open(&reader, path, 0, 0, cols, rows, dual_screen() ? 2 : 1);
+	// Pick up where the book was left off, and load its bookmarks. A book is
+	// recognised by its path and size.
+	long size = storage_file_size(path);
+	uint32_t book_id = size > 0 ? (uint32_t)size : 0;
+	bool known = bookmarks_load(path, book_id, &marks);
+	bool resume = known && marks.has_last;
+
+	EpubResult result = reader_open(&reader, path, resume ? marks.last_chapter : 0, resume ? marks.last_offset : 0,
+	                                cols, rows, dual_screen() ? 2 : 1);
 	if (result != EPUB_OK) {
 		show_error(path, result);
 		return false;
 	}
+	snprintf(book_path, sizeof book_path, "%s", path);
+	book_size = book_id;
+	turns_unsaved = 0;
+	bm_open = false;
+	if (resume && (marks.last_chapter > 0 || marks.last_offset > 0)) reader_set_notice(&reader, "Resumed");
 	render_set_font(&reading_font); // also clears both screens
 
 	recent_touch(&recent, path);
@@ -99,6 +122,17 @@ static bool open_book(const char *path) {
 	input_set_context(INPUT_READING);
 	reader.redraw = true;
 	return true;
+}
+
+// Saves the current place and the bookmarks. Returns true if it worked.
+static bool save_position(void) {
+	marks.has_last = true;
+	marks.last_chapter = (uint16_t)reader_chapter(&reader);
+	marks.last_offset = reader_offset(&reader);
+	turns_unsaved = 0;
+	bool ok = bookmarks_save(book_path, book_size, &marks);
+	if (!ok) save_failed = true;
+	return ok;
 }
 
 static void show_main_menu(void) {
@@ -158,9 +192,54 @@ static void update_library(uint32_t actions, bool tapped, int x, int y) {
 	}
 }
 
+// The bookmark menu is open: its keys are the menu ones (decision 033).
+static void update_bookmark_menu(uint32_t actions) {
+	int visible = bookmark_menu_visible();
+	BmEvent e = bookmark_menu_update(&bm_menu, &marks, actions, visible);
+
+	switch (e.kind) {
+	case BM_EVENT_CLOSE:
+	case BM_EVENT_JUMP:
+		if (e.kind == BM_EVENT_JUMP) {
+			const Mark *k = &marks.mark[e.index];
+			reader_goto(&reader, k->chapter, k->offset);
+			save_position();
+		}
+		bm_open = false;
+		input_set_context(INPUT_READING);
+		reader.redraw = true;
+		break;
+	case BM_EVENT_DELETE:
+		marks_remove_at(&marks, e.index);
+		save_position();
+		bookmark_menu_clamp(&bm_menu, &marks, visible);
+		break;
+	case BM_EVENT_NONE:
+		break;
+	}
+	if (bm_open && bm_menu.changed) reader.redraw = true; // the box is drawn after the page
+}
+
 static void update_reader(uint32_t actions) {
-	if (actions & ACT_NEXT_PAGE) reader_next(&reader);
-	if (actions & ACT_PREV_PAGE) reader_prev(&reader);
+	if (bm_open) {
+		update_bookmark_menu(actions);
+		return;
+	}
+
+	bool turned = false;
+	if ((actions & ACT_NEXT_PAGE) && reader_next(&reader)) turned = true;
+	if ((actions & ACT_PREV_PAGE) && reader_prev(&reader)) turned = true;
+	if (turned && ++turns_unsaved >= SAVE_EVERY_TURNS) save_position();
+
+	if (actions & ACT_BOOKMARK) {
+		if (reader_toggle_bookmark(&reader, &marks) != TOGGLE_FULL) save_position();
+	}
+	if (actions & ACT_BOOKMARK_MENU) {
+		bookmark_menu_open(&bm_menu, &marks, reader_chapter(&reader), reader_offset(&reader), bookmark_menu_visible());
+		bm_open = true;
+		input_set_context(INPUT_MENU);
+		reader.redraw = true;
+	}
 
 	if (actions & ACT_INVERT) {
 		// B cycles through the themes: normal, dark, sepia (decision 042).
@@ -169,7 +248,10 @@ static void update_reader(uint32_t actions) {
 		save_failed = !config_save(&config);
 		reader.redraw = true;
 	}
-	if (actions & ACT_MENU) show_main_menu();
+	if (actions & ACT_MENU) {
+		save_position();
+		show_main_menu();
+	}
 }
 
 int main(void) {
@@ -214,7 +296,10 @@ int main(void) {
 		if (!box_visible) {
 			if (current == SCREEN_MAIN_MENU) main_menu_draw(&menu, SCREEN_BOTTOM);
 			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
-			else reader_draw(&reader, dual_screen());
+			else if (reader_draw(&reader, dual_screen(), &marks) && bm_open) {
+				bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);
+				bm_menu.changed = false;
+			}
 		}
 		render_present(SCREEN_TOP);
 		render_present(SCREEN_BOTTOM);

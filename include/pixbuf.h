@@ -24,8 +24,8 @@
 int pix_cols(const Font *font, bool rotated);
 int pix_rows(const Font *font, bool rotated);
 
-// Draws one glyph in a cell. Set pixels get `value`, other pixels are left
-// alone. Cells outside the grid are ignored.
+// Draws one glyph in a cell: the cell is cleared to 0, then the glyph's set
+// pixels get `value`. Cells outside the grid are ignored.
 void pix_draw_glyph(uint8_t *fb, const Font *font, bool rotated, int col, int row, uint8_t glyph,
                     uint8_t value);
 

@@ -128,3 +128,12 @@ int storage_read_file(const char *path, uint8_t *buf, size_t cap) {
 	fclose(f);
 	return failed ? -1 : (int)n;
 }
+
+long storage_file_size(const char *path) {
+	char full[PATH_CAP];
+	if (!full_path(full, path, "")) return -1;
+
+	struct stat st;
+	if (stat(full, &st) != 0) return -1;
+	return (long)st.st_size;
+}

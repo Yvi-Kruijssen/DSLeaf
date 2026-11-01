@@ -31,6 +31,9 @@ void storage_set_root(const char *root);
 // between removing the old file and renaming the new one), the .tmp is used.
 int storage_read_text(const char *path, char *buf, size_t cap);
 
+// Size of a file in bytes, or -1 if it cannot be found.
+long storage_file_size(const char *path);
+
 // Reads a binary file into `buf` (no terminating NUL). At most `cap` bytes are
 // read. Returns the number of bytes, or -1 if the file cannot be read.
 int storage_read_file(const char *path, uint8_t *buf, size_t cap);

@@ -16,6 +16,21 @@ void pix_draw_glyph(uint8_t *fb, const Font *font, bool rotated, int col, int ro
 	int w = font->width, h = font->height;
 	const uint8_t *bits = font->glyph[glyph];
 
+	// The cell is cleared first, so a space really erases what was there. This
+	// is how overlays such as a menu box cover the page underneath.
+	if (!rotated) {
+		int cx = (PIX_W - cols * w) / 2 + col * w;
+		int cy = (PIX_H - rows * h) / 2 + row * h;
+		for (int py = 0; py < h; py++) {
+			for (int px = 0; px < w; px++) fb[(cy + py) * PIX_W + cx + px] = 0;
+		}
+	} else {
+		int xs0 = (PIX_W - rows * h) / 2, ys0 = (PIX_H - cols * w) / 2;
+		for (int px = 0; px < w; px++) {
+			for (int py = 0; py < h; py++) fb[(ys0 + col * w + px) * PIX_W + xs0 + (rows * h - 1 - (row * h + py))] = 0;
+		}
+	}
+
 	if (!rotated) {
 		// The grid is centred, which leaves a few spare pixels around it.
 		int x0 = (PIX_W - cols * w) / 2 + col * w;

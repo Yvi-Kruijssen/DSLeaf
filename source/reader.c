@@ -1,5 +1,6 @@
 #include "reader.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -55,6 +56,7 @@ static void layout_view(Reader *r) {
 }
 
 static void show_page(Reader *r, int page) {
+	r->notice[0] = '\0';
 	r->page = page / r->per_view * r->per_view;
 	layout_view(r);
 }
@@ -223,3 +225,92 @@ int reader_percent(const Reader *r) {
 
 int reader_page_number(const Reader *r, int slot) { return r->page + slot + 1; }
 int reader_page_total(const Reader *r) { return r->page_count; }
+
+// ---- Position, bookmarks and notices ----
+
+bool reader_goto(Reader *r, int chapter, uint32_t offset) {
+	if (!r->open || chapter < 0 || chapter >= r->book.chapter_count) return false;
+
+	uint32_t base = r->text.base;
+	if (chapter == r->chapter && offset >= base && offset <= base + r->text.len) {
+		show_page(r, page_for(r, offset - base)); // already loaded
+		return true;
+	}
+	return load_chapter(r, chapter, offset);
+}
+
+void reader_page_range(const Reader *r, int slot, uint32_t *from, uint32_t *to) {
+	if (!r->open || slot < 0 || slot >= r->view_count) {
+		*from = *to = 0;
+		return;
+	}
+	*from = r->text.base + r->view[slot].start.offset;
+	*to = r->text.base + r->view[slot].next.offset;
+}
+
+bool reader_page_marked(const Reader *r, int slot, const BookMarks *marks) {
+	uint32_t from, to;
+	reader_page_range(r, slot, &from, &to);
+	return marks_count_range(marks, r->chapter, from, to) > 0;
+}
+
+void reader_set_notice(Reader *r, const char *text) {
+	snprintf(r->notice, sizeof r->notice, "%s", text);
+	r->redraw = true;
+}
+
+void reader_snippet(const Reader *r, int slot, char *out, size_t cap) {
+	size_t n = 0;
+	if (cap == 0) return;
+	out[0] = '\0';
+	if (!r->open || slot < 0 || slot >= r->view_count) return;
+
+	const Page *page = &r->view[slot];
+	bool space = false;
+	for (int l = 0; l < page->line_count && n + 4 < cap; l++) {
+		if (n > 0) space = true; // a new line is a space between words
+		for (int k = 0; k < page->line[l].len && n + 4 < cap; k++) {
+			uint8_t g = page->line[l].glyph[k];
+			if (g == ' ' || g < 0x20) {
+				space = n > 0;
+				continue;
+			}
+			if (space) out[n++] = ' ';
+			space = false;
+			// The glyphs are Latin-1, so write them out as UTF-8.
+			if (g < 0x80) {
+				out[n++] = (char)g;
+			} else {
+				out[n++] = (char)(0xC0 | (g >> 6));
+				out[n++] = (char)(0x80 | (g & 0x3F));
+			}
+		}
+		if (n >= 24) break; // enough to recognise the page
+	}
+	out[n] = '\0';
+}
+
+ToggleResult reader_toggle_bookmark(Reader *r, BookMarks *marks) {
+	int removed = 0;
+	for (int slot = 0; slot < r->view_count; slot++) {
+		uint32_t from, to;
+		reader_page_range(r, slot, &from, &to);
+		removed += marks_remove_range(marks, r->chapter, from, to);
+	}
+	if (removed > 0) {
+		reader_set_notice(r, "Bookmark removed");
+		return TOGGLE_REMOVED;
+	}
+
+	uint32_t from, to;
+	reader_page_range(r, 0, &from, &to);
+	char text[MARK_TEXT_MAX * 2];
+	reader_snippet(r, 0, text, sizeof text);
+
+	if (marks_add(marks, r->chapter, from, text) == MARK_FULL) {
+		reader_set_notice(r, "Bookmarks full");
+		return TOGGLE_FULL;
+	}
+	reader_set_notice(r, "Bookmark added");
+	return TOGGLE_ADDED;
+}

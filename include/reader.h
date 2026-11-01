@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "bookmarks.h"
 #include "chaptertext.h"
 #include "epub.h"
 #include "font.h"
@@ -36,6 +37,7 @@ typedef struct {
 	Page view[READER_VIEW_MAX];
 	int view_count;                 // pages in `view` that hold something
 	bool redraw;
+	char notice[32];                // a short message for the status row, cleared by the next page turn
 
 	uint32_t *chapter_start;        // bytes of chapter files before each chapter, for the percentage
 	uint32_t total_bytes;
@@ -75,6 +77,31 @@ int reader_chapter_total(const Reader *r);
 // Changes the paragraph spacing and indent, keeping the position.
 void reader_set_style(Reader *r, LayoutStyle style);
 
+// ---- Position, bookmarks and notices (decision 045) ----
+
+// Jumps to a chapter and an offset in that chapter's text, as saved in a
+// bookmark or as the last position. Returns false if the chapter does not exist.
+bool reader_goto(Reader *r, int chapter, uint32_t offset);
+
+// The part of the chapter text shown by page `slot` of the view, as offsets from
+// the start of the chapter: from (included) up to to (not included).
+void reader_page_range(const Reader *r, int slot, uint32_t *from, uint32_t *to);
+
+// True if a bookmark falls on that page.
+bool reader_page_marked(const Reader *r, int slot, const BookMarks *marks);
+
+typedef enum { TOGGLE_ADDED, TOGGLE_REMOVED, TOGGLE_FULL } ToggleResult;
+
+// A pressed: if any page shown has a bookmark they are all removed, otherwise
+// one is added at the start of the first page. Sets a notice with the outcome.
+ToggleResult reader_toggle_bookmark(Reader *r, BookMarks *marks);
+
+// The first words of a page (as UTF-8), to recognise a bookmark by.
+void reader_snippet(const Reader *r, int slot, char *out, size_t cap);
+
+// Shows a short message in the status row until the next page turn.
+void reader_set_notice(Reader *r, const char *text);
+
 // How far through the book, 0 to 100.
 int reader_percent(const Reader *r);
 
@@ -92,6 +119,6 @@ int reader_page_total(const Reader *r);
 // Draws the pages if anything changed. With `dual` the first page goes on the
 // top screen and the second on the bottom one. Otherwise one page is drawn on
 // the bottom screen. Returns true when it drew.
-bool reader_draw(Reader *r, bool dual);
+bool reader_draw(Reader *r, bool dual, const BookMarks *marks);
 
 #endif
