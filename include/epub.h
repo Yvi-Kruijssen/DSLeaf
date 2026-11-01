@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "textx.h"
 #include "zip.h"
 
 #define EPUB_TITLE_MAX 128
@@ -42,6 +43,20 @@ EpubResult epub_check(const char *path);
 // epub_close. On failure nothing needs closing.
 EpubResult epub_open(Epub *book, const char *path);
 void epub_close(Epub *book);
+
+// Reads one chapter as a stream of words and breaks (see textx.h). The stream
+// holds about 37 KB while open. Only one chapter needs to be open at a time.
+typedef struct {
+	ZipStream stream; // must stay the first member
+	TextExtractor text;
+} EpubChapter;
+
+// Opens chapter `index` (0 to chapter_count - 1). Returns false if it cannot be read.
+bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter);
+
+// Next item. Returns false after the END item.
+bool epub_chapter_next(EpubChapter *chapter, TextItem *item);
+void epub_chapter_close(EpubChapter *chapter);
 
 // Short reason for the error box, at most 24 characters.
 const char *epub_error_text(EpubResult result);

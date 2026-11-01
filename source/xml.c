@@ -311,6 +311,7 @@ static XmlEvent read_start_tag(XmlReader *r, int first) {
 	unrd(r, c);
 	store_name(r->name, sizeof r->name, raw);
 	r->attr_count = 0;
+	r->self_closing = false;
 
 	for (;;) {
 		skip_spaces(r);
@@ -320,6 +321,7 @@ static XmlEvent read_start_tag(XmlReader *r, int first) {
 			int next = rd(r);
 			if (next == '>') {
 				r->pending_end = true;
+				r->self_closing = true;
 				break;
 			}
 			unrd(r, next);

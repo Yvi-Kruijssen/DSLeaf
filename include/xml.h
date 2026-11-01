@@ -62,6 +62,7 @@ typedef struct {
 	char name[XML_NAME_MAX];
 	XmlAttr attr[XML_ATTR_MAX];
 	int attr_count;
+	bool self_closing; // the START tag was written like <br/>. An END event follows.
 	char text[XML_TEXT_MAX + 1];
 	size_t text_len;
 } XmlReader;

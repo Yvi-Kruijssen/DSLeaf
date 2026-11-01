@@ -406,3 +406,24 @@ void epub_close(Epub *book) {
 	book->chapter = NULL;
 	zip_close(&book->zip);
 }
+
+bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter) {
+	memset(chapter, 0, sizeof *chapter);
+	if (index < 0 || index >= book->chapter_count) return false;
+
+	ZipEntry entry;
+	if (!zip_find(&book->zip, book->chapter[index], &entry)) return false;
+	if (!zip_stream_open(&book->zip, &entry, &chapter->stream)) return false;
+
+	// xml_source_read only needs the stream, which is the first member.
+	textx_init(&chapter->text, xml_source_read, chapter);
+	return true;
+}
+
+bool epub_chapter_next(EpubChapter *chapter, TextItem *item) {
+	return textx_next(&chapter->text, item);
+}
+
+void epub_chapter_close(EpubChapter *chapter) {
+	zip_stream_close(&chapter->stream);
+}
