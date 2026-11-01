@@ -137,3 +137,5 @@ MainMenuEvent main_menu_update(MainMenu *m, uint32_t actions, bool tapped, int t
 
 	return event(MENU_EVENT_NONE, 0);
 }
+
+void main_menu_invalidate(MainMenu *m) { m->redraw = true; }

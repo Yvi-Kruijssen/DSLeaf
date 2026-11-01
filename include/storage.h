@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #define STORAGE_APP_DIR   "/DSLeaf"
 #define STORAGE_BOOKS_DIR "/Books"
@@ -33,5 +34,14 @@ int storage_read_text(const char *path, char *buf, size_t cap);
 // A failure leaves the old file or the complete .tmp in place, never a
 // half-written file under the real name. Returns false on any error.
 bool storage_write_text(const char *path, const char *text);
+
+// Calls `visit` for each entry of a directory (not "." or ".."), in no
+// particular order. `visit` returns false to stop early. Returns false if the
+// directory cannot be opened.
+typedef bool (*StorageDirFn)(const char *name, bool is_dir, void *user);
+bool storage_list_dir(const char *path, StorageDirFn visit, void *user);
+
+// Opens a file for reading ("rb") or similar. Returns NULL on failure.
+FILE *storage_fopen(const char *path, const char *mode);
 
 #endif

@@ -54,6 +54,10 @@ void main_menu_init(MainMenu *menu, const char *const *titles, int count);
 MainMenuEvent main_menu_update(MainMenu *menu, uint32_t actions, bool tapped, int tap_x,
                                int tap_y);
 
+// Makes the next main_menu_draw redraw everything, for example after another
+// screen was shown on top.
+void main_menu_invalidate(MainMenu *menu);
+
 // Draws the menu if anything changed. Always draws on one screen, never
 // rotated. Returns true when it drew.
 bool main_menu_draw(MainMenu *menu, Screen screen);
