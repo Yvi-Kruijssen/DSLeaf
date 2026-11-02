@@ -13,11 +13,12 @@
 #define FIRST_ROW 5
 #define VALUE_END 29     // the value ends at this column (x 239, inside the panel)
 #define PANEL_H 149      // the panel is y 15 to 163
-#define BUTTON_W 104     // two buttons side by side
+#define BUTTON_W 70      // three buttons side by side
 #define BUTTON_H 16
 #define BUTTON_Y 124
 #define PREVIEW_X 16
-#define RESET_X 136
+#define RESET_X 93
+#define ABOUT_X 170
 #define HELP_RULE_Y 143
 #define HELP_ROW 18      // two lines: the help, then the second help line (or the size or a note)
 #define HINT_Y 167       // below the panel, ending at y 174
@@ -32,7 +33,7 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 
 	// The settings. Preview and Reset are buttons below the list.
 	for (int i = 0; i < SETTING_COUNT; i++) {
-		if (i == SETTING_PREVIEW || i == SETTING_RESET) continue;
+		if (i >= SETTING_PREVIEW) continue;
 		int row = FIRST_ROW + i;
 		bool selected = i == m->selected;
 		Style style = selected ? STYLE_ACCENT : STYLE_NORMAL;
@@ -49,9 +50,10 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 		render_puts(screen, 3, row, settings_label((Setting)i), style);
 		render_puts(screen, VALUE_END - (int)strlen(shown) + 1, row, shown, style);
 	}
-	paper_button(screen, PREVIEW_X, BUTTON_Y, BUTTON_W, BUTTON_H, settings_label(SETTING_PREVIEW), m->selected == SETTING_PREVIEW, false, false);
-	paper_button(screen, RESET_X, BUTTON_Y, BUTTON_W, BUTTON_H, m->confirm_reset ? "Sure? A=yes" : settings_label(SETTING_RESET),
+	paper_button(screen, PREVIEW_X, BUTTON_Y, BUTTON_W, BUTTON_H, "Preview", m->selected == SETTING_PREVIEW, false, false);
+	paper_button(screen, RESET_X, BUTTON_Y, BUTTON_W, BUTTON_H, m->confirm_reset ? "Sure? A" : "Reset",
 	             m->selected == SETTING_RESET, false, false);
+	paper_button(screen, ABOUT_X, BUTTON_Y, BUTTON_W, BUTTON_H, "About", m->selected == SETTING_ABOUT, false, false);
 
 	// What the selected setting does, under a line.
 	render_backdrop_rect(screen, PAPER_RULE_X, HELP_RULE_Y, PAPER_RULE_W, 1, BD_RULE);

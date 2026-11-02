@@ -25,9 +25,10 @@ typedef enum {
 	SETTING_INDENT,  // first-line indent
 	SETTING_LINE,    // extra pixel rows between lines (pixel fonts only)
 	SETTING_GAP,     // blank lines between paragraphs
-	// Two buttons below the list, side by side: Left and Right move between them.
+	// Three buttons below the list, side by side: Left and Right move between them.
 	SETTING_PREVIEW, // shows a sample page (A)
 	SETTING_RESET,   // back to the defaults (asks for a second A)
+	SETTING_ABOUT,   // the About screen: licences and notices (decision 077)
 	SETTING_COUNT,
 } Setting;
 
@@ -43,6 +44,7 @@ typedef enum {
 	SETTINGS_EVENT_NONE,
 	SETTINGS_EVENT_CHANGED, // `setting` has a new value in the config
 	SETTINGS_EVENT_PREVIEW, // show the sample page
+	SETTINGS_EVENT_ABOUT,   // show the About screen
 	SETTINGS_EVENT_BACK,
 } SettingsEventKind;
 

@@ -27,6 +27,7 @@ const char *settings_label(Setting s) {
 	case SETTING_FOOTER: return "Progress";
 	case SETTING_PREVIEW: return "Preview page";
 	case SETTING_RESET:  return "Reset all";
+	case SETTING_ABOUT:  return "About";
 	default:             return "";
 	}
 }
@@ -87,6 +88,7 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 		break;
 	case SETTING_VMARGIN: snprintf(out, cap, "%d px", config_vmargin_px(c)); break;
 	case SETTING_PREVIEW: snprintf(out, cap, "Press A"); break;
+	case SETTING_ABOUT:  snprintf(out, cap, "Press A"); break;
 	case SETTING_RESET:  snprintf(out, cap, "%s", m->confirm_reset ? "Sure? Press A" : "Press A"); break;
 	default:             if (cap > 0) out[0] = '\0'; break;
 	}
@@ -138,6 +140,10 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		*line1 = "Sample page, your settings.";
 		*line2 = "Any key goes back.";
 		break;
+	case SETTING_ABOUT:
+		*line1 = "What DSLeaf is, its licence";
+		*line2 = "and the font notices.";
+		break;
 	case SETTING_RESET:
 		*line1 = "Every setting back to its";
 		*line2 = "default. Press A twice.";
@@ -187,26 +193,29 @@ SettingsEvent settings_update(SettingsMenu *m, Config *c, uint32_t actions) {
 		e.kind = SETTINGS_EVENT_BACK;
 		return e;
 	}
-	// The two buttons below the list are side by side (decision 060): Left and Right move between them,
-	// Up goes back to the last setting, Down has nowhere to go, and A presses.
-	if (m->selected == SETTING_PREVIEW || m->selected == SETTING_RESET) {
+	// The three buttons below the list are side by side (decision 060 and 077): Left and Right move between
+	// them, Up goes back to the last setting, Down has nowhere to go, and A presses.
+	if (m->selected >= SETTING_PREVIEW) {
 		if (actions & ACT_UP) {
 			m->selected = SETTING_PREVIEW - 1;
 			m->redraw = true;
 		} else if (actions & ACT_LEFT) {
-			if (m->selected == SETTING_RESET) {
-				m->selected = SETTING_PREVIEW;
+			if (m->selected > SETTING_PREVIEW) {
+				m->selected--;
 				m->redraw = true;
 			}
 		} else if (actions & ACT_RIGHT) {
-			if (m->selected == SETTING_PREVIEW) {
-				m->selected = SETTING_RESET;
+			if (m->selected < SETTING_ABOUT) {
+				m->selected++;
 				m->redraw = true;
 			}
 		} else if (actions & ACT_CONFIRM) {
 			if (m->selected == SETTING_PREVIEW) {
 				e.kind = SETTINGS_EVENT_PREVIEW;
 				e.setting = SETTING_PREVIEW;
+			} else if (m->selected == SETTING_ABOUT) {
+				e.kind = SETTINGS_EVENT_ABOUT;
+				e.setting = SETTING_ABOUT;
 			} else if (armed) {
 				config_set_defaults(c);
 				e.kind = SETTINGS_EVENT_CHANGED;

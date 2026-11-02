@@ -2,6 +2,7 @@
 #include <nds.h>
 #include <stdio.h>
 
+#include "about.h"
 #include "bookmark_menu.h"
 #include "bookmarks.h"
 #include "config.h"
@@ -22,7 +23,7 @@
 #include "storage.h"
 #include "toc.h"
 
-typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS, SCREEN_PREVIEW } AppScreen;
+typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS, SCREEN_PREVIEW, SCREEN_ABOUT } AppScreen;
 
 static Font ui_font;      // the menus always use the built-in font
 static Font reading_font; // the book uses the font from the settings
@@ -229,6 +230,13 @@ static void close_preview(void) {
 	current = SCREEN_SETTINGS;
 }
 
+static About about; // 3 KB of line tables, kept off the stack
+
+static void show_about(void) {
+	about_open(&about);
+	current = SCREEN_ABOUT;
+}
+
 static void show_library(void) {
 	library_scan(&library);
 	current = SCREEN_LIBRARY;
@@ -423,6 +431,8 @@ static void update_settings(uint32_t actions) {
 		settings_menu.redraw = true;
 	} else if (e.kind == SETTINGS_EVENT_PREVIEW) {
 		show_preview();
+	} else if (e.kind == SETTINGS_EVENT_ABOUT) {
+		show_about();
 	} else if (e.kind == SETTINGS_EVENT_BACK) {
 		show_main_menu();
 	}
@@ -522,6 +532,11 @@ int main(void) {
 			update_library(actions, tapped, x, y);
 		} else if (current == SCREEN_SETTINGS) {
 			update_settings(actions);
+		} else if (current == SCREEN_ABOUT) {
+			if (about_update(&about, actions)) {
+				settings_menu.redraw = true;
+				current = SCREEN_SETTINGS;
+			}
 		} else if (current == SCREEN_PREVIEW) {
 			if (actions || tapped) close_preview(); // any key or a tap goes back
 		} else {
@@ -548,6 +563,7 @@ int main(void) {
 			if (current == SCREEN_MAIN_MENU) main_menu_draw(&menu, SCREEN_BOTTOM);
 			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
 			else if (current == SCREEN_SETTINGS) settings_draw(&settings_menu, &config, SCREEN_BOTTOM);
+			else if (current == SCREEN_ABOUT) about_draw(&about, SCREEN_BOTTOM);
 			else if (current == SCREEN_PREVIEW) { /* drawn once when it opened */ }
 			else if (reader_draw(&reader, dual_screen(), &marks, config.footer) && bm_open) {
 				bool with_page = reader_book_pages_exact(&reader);
