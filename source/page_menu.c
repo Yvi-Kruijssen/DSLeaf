@@ -32,6 +32,18 @@ int page_menu_digit(const PageMenu *m, int index) {
 	return (m->value / power10(m->digits - 1 - index)) % 10;
 }
 
+bool page_menu_tap(PageMenu *m, int digit, int delta) {
+	if (digit < 0 || digit >= m->digits) return false;
+	int before = m->value, cursor = m->cursor;
+	m->cursor = digit;
+	if (delta != 0) {
+		long v = (long)m->value + (delta > 0 ? 1L : -1L) * power10(m->digits - 1 - digit);
+		m->value = v < 1 ? 1 : (v > m->total ? m->total : (int)v);
+	}
+	if (m->value != before || m->cursor != cursor) m->changed = true;
+	return m->value != before || m->cursor != cursor;
+}
+
 PageEvent page_menu_update(PageMenu *m, uint32_t actions) {
 	if (actions & ACT_BACK) return PAGE_EVENT_CLOSE;
 	if (actions & ACT_CONFIRM) return PAGE_EVENT_GO;

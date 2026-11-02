@@ -12,6 +12,7 @@
 #include "message_box.h"
 #include "pagecache.h"
 #include "page_menu.h"
+#include "popup.h"
 #include "preview.h"
 #include "reader.h"
 #include "recent.h"
@@ -318,8 +319,54 @@ static void go_to_entry(int index) {
 	save_position();
 }
 
+// A touch on the pop-up (decision 067). Everything a key does can be done with a touch: a tab, the L and R buttons,
+// a row (the first touch selects it and a touch on the selected row goes there), the scrollbar (a page up or down),
+// the key buttons (Go, Back, Del), the digits of the Page tab (a touch on a digit picks it, above or below it changes it),
+// and outside the pop-up closes it. Most of them become the key they stand for, which is returned, so that keys and
+// touches go through the same code. Returns 0 when the touch was handled here (a tab was opened, a row selected).
+static uint32_t popup_touch(int x, int y) {
+	bool rot = render_is_rotated();
+	PopupGeometry g = popup_geometry(rot);
+	int lx, ly;
+	popup_screen_to_pixel(rot, x, y, &lx, &ly);
+	bool with_page = reader_book_pages_exact(&reader);
+	PopupHit h = popup_hit(&g, menu_tab, with_page ? 3 : 2, menu_tab == TAB_PAGE ? page_menu.digits : 0, lx, ly);
+
+	ListMenu *list = menu_tab == TAB_CONTENTS ? &toc_menu : &bm_menu;
+	int count = menu_tab == TAB_CONTENTS ? toc.count : marks.count;
+	switch (h.kind) {
+	case POPUP_HIT_OUTSIDE: return ACT_BACK;
+	case POPUP_HIT_TAB:
+		if (h.index != (int)menu_tab && (h.index != (int)TAB_PAGE || with_page)) open_reading_menu((ReadingTab)h.index);
+		return 0;
+	case POPUP_HIT_TAB_PREV: open_reading_menu(reading_tab_step(menu_tab, -1, with_page)); return 0;
+	case POPUP_HIT_TAB_NEXT: open_reading_menu(reading_tab_step(menu_tab, 1, with_page)); return 0;
+	case POPUP_HIT_ROW: {
+		int index = list->top + h.index;
+		if (index >= count) return 0;
+		if (index == list->selected) return ACT_CONFIRM; // a touch on the selected row goes there
+		list_menu_select(list, count, index, bookmark_menu_visible());
+		if (list->changed) reader.redraw = true;
+		return 0;
+	}
+	case POPUP_HIT_SCROLL_UP: return count > g.rows ? ACT_LEFT : 0;   // a page up or down (Left and Right in the list)
+	case POPUP_HIT_SCROLL_DOWN: return count > g.rows ? ACT_RIGHT : 0;
+	case POPUP_HIT_HINT:
+		if (h.index == POPUP_GO) return ACT_CONFIRM;
+		if (h.index == POPUP_BACK) return ACT_BACK;
+		return ACT_REMOVE;
+	case POPUP_HIT_DIGIT:
+	case POPUP_HIT_DIGIT_UP:
+	case POPUP_HIT_DIGIT_DOWN:
+		if (page_menu_tap(&page_menu, h.index, h.kind == POPUP_HIT_DIGIT_UP ? 1 : (h.kind == POPUP_HIT_DIGIT_DOWN ? -1 : 0))) reader.redraw = true;
+		return 0;
+	default: return 0;
+	}
+}
+
 // The box is open: its keys are the menu ones (decision 033). L and R switch tabs.
-static void update_bookmark_menu(uint32_t actions) {
+static void update_bookmark_menu(uint32_t actions, bool tapped, int tap_x, int tap_y) {
+	if (tapped) actions |= popup_touch(tap_x, tap_y);
 	if (actions & (ACT_TAB_NEXT | ACT_TAB_PREV)) {
 		open_reading_menu(reading_tab_step(menu_tab, (actions & ACT_TAB_NEXT) ? 1 : -1, reader_book_pages_exact(&reader)));
 		return;
@@ -381,9 +428,9 @@ static void update_settings(uint32_t actions) {
 	}
 }
 
-static void update_reader(uint32_t actions) {
+static void update_reader(uint32_t actions, bool tapped, int tap_x, int tap_y) {
 	if (bm_open) {
-		update_bookmark_menu(actions);
+		update_bookmark_menu(actions, tapped, tap_x, tap_y);
 		return;
 	}
 
@@ -417,6 +464,7 @@ static void count_vblank(void) { vblanks++; }
 int main(void) {
 	render_init();
 	font_load_default(&ui_font);
+	render_set_ui_font(&ui_font); // the text of pictures (the pop-up over the page) is always 8x8
 	render_set_font(&ui_font);
 	render_set_rotated(false); // menus are never rotated (decision 027)
 	input_init();
@@ -477,7 +525,7 @@ int main(void) {
 		} else if (current == SCREEN_PREVIEW) {
 			if (actions || tapped) close_preview(); // any key or a tap goes back
 		} else {
-			update_reader(actions);
+			update_reader(actions, tapped, x, y);
 		}
 
 		// While reading and idle, count the pages of the chapters not seen yet, one small step at a time.

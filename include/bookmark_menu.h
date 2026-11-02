@@ -31,13 +31,6 @@ typedef enum { TAB_CONTENTS, TAB_BOOKMARKS, TAB_PAGE } ReadingTab;
 // The tab before or after `tab` (`step` is 1 or -1), skipping the Page tab when `with_page` is false.
 ReadingTab reading_tab_step(ReadingTab tab, int step, bool with_page);
 
-// The box is narrower when the page is rotated (decision 049). These say what
-// fits in a text area `width` characters wide: whether both tab names fit in the
-// title row (otherwise only the one in use is shown, as "<Contents>"), and the
-// longest key hint that fits.
-bool reading_menu_full_header(int width, bool with_page);
-const char *reading_menu_hint(ReadingTab tab, int width);
-
 typedef enum {
 	BM_EVENT_NONE,
 	BM_EVENT_CLOSE,
@@ -61,6 +54,9 @@ BmEvent list_menu_update(ListMenu *menu, int count, uint32_t actions, int visibl
 
 // Keeps the cursor inside a list of `count` entries.
 void list_menu_clamp(ListMenu *menu, int count, int visible);
+
+// Puts the cursor on entry `index` (a touch), scrolled into view. Does nothing for an index outside the list.
+void list_menu_select(ListMenu *menu, int count, int index, int visible);
 
 // Starts with the cursor on the first bookmark at or after the current place
 // (or the last one if all are earlier).

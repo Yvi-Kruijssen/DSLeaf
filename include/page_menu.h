@@ -24,6 +24,10 @@ void page_menu_open(PageMenu *menu, int current, int total);
 // Applies one frame of input. PAGE_EVENT_GO means the reader should go to `menu->value`.
 PageEvent page_menu_update(PageMenu *menu, uint32_t actions);
 
+// A touch on a digit: moves the cursor there and, with `delta` +1 or -1, changes that digit (a tap above or
+// below it). The value stays in 1 .. total. Returns true if anything changed.
+bool page_menu_tap(PageMenu *menu, int digit, int delta);
+
 // The digit of the number at `index` (0 is the most significant of `digits`).
 int page_menu_digit(const PageMenu *menu, int index);
 

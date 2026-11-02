@@ -4,6 +4,7 @@
 
 #include "logo_bin.h" // generated from data/logo.bin by the build
 #include "pixbuf.h"
+#include "popup.h"
 #include "text.h"
 
 #define GRID_W 32 // tile map is 32x32, the visible area is 32x24
@@ -34,10 +35,15 @@ static bool logo[2];
 // colours in palette entries 192 up, after the logo's.
 #define BACKDROP_PALETTE_BASE 192
 static bool backdrop[2];
+static bool popup_rot[2];     // the picture is drawn turned, like a rotated page (decision 066)
+static const Font *ui_font;   // the font of the text in pictures, the built-in 8x8 font
 
 static u16 *map[2];
 static u16 *gfx[2];
-static u16 *palette[2];
+// Palette memory only takes 16 and 32 bit writes. The pointers are volatile so that a loop copying a colour table
+// cannot be turned into a memcpy, which writes single bytes when the table is not 4-byte aligned (the dark
+// theme row of the picture colours is not) and then nothing changes (decision 068).
+static volatile u16 *palette[2];
 static int bg_id[2];
 
 typedef struct {
@@ -65,17 +71,17 @@ static const u16 backdrop_colours[THEME_COUNT][BD_COUNT] = {
 	[THEME_NORMAL] = {
 		RGB15(3, 7, 6), RGB15(30, 29, 25), RGB15(17, 20, 15), RGB15(25, 25, 21), RGB15(14, 22, 8), RGB15(28, 28, 26),
 		RGB15(31, 31, 30), RGB15(21, 22, 20), RGB15(30, 31, 27), RGB15(3, 6, 4), RGB15(15, 16, 14), RGB15(5, 16, 7),
-		RGB15(19, 20, 18), RGB15(22, 25, 18),
+		RGB15(19, 20, 18), RGB15(22, 25, 18), RGB15(17, 18, 15),
 	},
 	[THEME_DARK] = { // black and neutral greys (decision 064); only the accent and the focus colour are green
 		RGB15(0, 0, 0), RGB15(2, 2, 2), RGB15(9, 9, 9), RGB15(5, 5, 5), RGB15(20, 26, 11), RGB15(7, 7, 7),
 		RGB15(12, 12, 12), RGB15(1, 1, 1), RGB15(9, 9, 9), RGB15(29, 29, 29), RGB15(12, 12, 12), RGB15(20, 26, 11),
-		RGB15(10, 10, 10), RGB15(18, 18, 18),
+		RGB15(10, 10, 10), RGB15(18, 18, 18), RGB15(3, 3, 3),
 	},
 	[THEME_SEPIA] = {
 		RGB15(3, 7, 6), RGB15(27, 24, 18), RGB15(15, 11, 7), RGB15(23, 20, 14), RGB15(12, 8, 3), RGB15(25, 22, 17),
 		RGB15(30, 28, 23), RGB15(18, 15, 10), RGB15(28, 25, 18), RGB15(7, 5, 3), RGB15(16, 13, 10), RGB15(12, 8, 3),
-		RGB15(17, 14, 10), RGB15(21, 22, 16),
+		RGB15(17, 14, 10), RGB15(21, 22, 16), RGB15(18, 14, 9),
 	},
 };
 
@@ -267,16 +273,46 @@ int render_puts_utf8(Screen screen, int col, int row, const char *str, Style sty
 
 // ---- The picture behind the text ----
 
+void render_set_ui_font(const Font *f) { ui_font = f; }
+
+static const Font *picture_font(void) { return ui_font ? ui_font : font; }
+
 void render_backdrop_begin(Screen screen) {
 	if (pixel) return; // the bitmap layer holds the page then
 	memset(fb[screen], BACKDROP_PALETTE_BASE + BD_BACK, sizeof fb[screen]);
+	popup_rot[screen] = false;
 	fb_dirty[screen] = true;
 	backdrop[screen] = true;
 	show_layer();
 }
 
+void render_popup_begin(Screen screen, int x, int y, int w, int h) {
+	popup_rot[screen] = rotated;
+	if (!pixel) {
+		// The bitmap layer is behind the tile text, so the cells of the page under the pop-up are made
+		// empty (the space glyph), and everything else in the bitmap layer is transparent (colour 0).
+		memset(fb[screen], 0, sizeof fb[screen]);
+		int sx, sy, sw, sh;
+		popup_to_screen(rotated, x, y, w, h, &sx, &sy, &sw, &sh);
+		u16 blank = (u16)(' ' * tiles_per_glyph());
+		for (int cy = sy / 8; cy <= (sy + sh - 1) / 8 && cy < GRID_W; cy++) {
+			for (int cx = sx / 8; cx <= (sx + sw - 1) / 8 && cx < GRID_W; cx++) map[screen][cy * GRID_W + cx] = blank;
+		}
+	}
+	fb_dirty[screen] = true;
+	backdrop[screen] = true;
+	show_layer();
+}
+
+static void picture_pixel(Screen screen, int lx, int ly, BackdropColour colour) {
+	int x, y;
+	popup_pixel_to_screen(popup_rot[screen], lx, ly, &x, &y);
+	if (x >= 0 && x < PIX_W && y >= 0 && y < PIX_H) fb[screen][y * PIX_W + x] = (uint8_t)(BACKDROP_PALETTE_BASE + colour);
+}
+
 void render_backdrop_rect(Screen screen, int x, int y, int w, int h, BackdropColour colour) {
 	if (!backdrop[screen]) return;
+	popup_to_screen(popup_rot[screen], x, y, w, h, &x, &y, &w, &h);
 	if (x < 0) { w += x; x = 0; }
 	if (y < 0) { h += y; y = 0; }
 	if (x + w > PIX_W) w = PIX_W - x;
@@ -286,19 +322,45 @@ void render_backdrop_rect(Screen screen, int x, int y, int w, int h, BackdropCol
 	fb_dirty[screen] = true;
 }
 
-void render_backdrop_text(Screen screen, int x, int y, const char *text, BackdropColour colour) {
-	if (!backdrop[screen] || !font) return;
-	for (; *text; text++, x += font->width) {
-		const uint8_t *bits = font->glyph[(uint8_t)*text];
-		for (int py = 0; py < font->height; py++) {
-			for (int px = 0; px < font->width; px++) {
-				if (((bits[py] >> px) & 1) && x + px >= 0 && x + px < PIX_W && y + py >= 0 && y + py < PIX_H) {
-					fb[screen][(y + py) * PIX_W + x + px] = (uint8_t)(BACKDROP_PALETTE_BASE + colour);
+// Draws text of glyph codes at a pixel position, `scale` times as big. UTF-8 text is turned into glyph
+// codes first. Stops at `max_width` pixels (0: no limit). Returns the width drawn.
+static int picture_text(Screen screen, int x, int y, const char *text, BackdropColour colour, int scale, bool utf8, int max_width) {
+	const Font *f = picture_font();
+	if (!backdrop[screen] || !f || scale < 1) return 0;
+	int start = x;
+	fb_dirty[screen] = true;
+	while (*text) {
+		uint8_t glyphs[3];
+		int n = 1;
+		if (utf8) n = text_utf8_next(&text, glyphs);
+		else glyphs[0] = (uint8_t)*text++;
+		for (int i = 0; i < n; i++) {
+			if (max_width > 0 && x - start + f->width * scale > max_width) return x - start;
+			const uint8_t *bits = f->glyph[glyphs[i]];
+			for (int py = 0; py < f->height; py++) {
+				for (int px = 0; px < f->width; px++) {
+					if (!((bits[py] >> px) & 1)) continue;
+					for (int sy = 0; sy < scale; sy++) {
+						for (int sx = 0; sx < scale; sx++) picture_pixel(screen, x + px * scale + sx, y + py * scale + sy, colour);
+					}
 				}
 			}
+			x += f->width * scale;
 		}
 	}
-	fb_dirty[screen] = true;
+	return x - start;
+}
+
+void render_backdrop_text(Screen screen, int x, int y, const char *text, BackdropColour colour) {
+	picture_text(screen, x, y, text, colour, 1, false, 0);
+}
+
+void render_backdrop_text_scaled(Screen screen, int x, int y, const char *text, BackdropColour colour, int scale) {
+	picture_text(screen, x, y, text, colour, scale, false, 0);
+}
+
+int render_backdrop_text_utf8(Screen screen, int x, int y, const char *text, BackdropColour colour, int max_width) {
+	return picture_text(screen, x, y, text, colour, 1, true, max_width);
 }
 
 // ---- The startup logo ----
@@ -306,7 +368,7 @@ void render_backdrop_text(Screen screen, int x, int y, const char *text, Backdro
 void render_show_logo(Screen screen) {
 	// logo_bin: 64 palette entries of 2 bytes, then 256 x 192 colour numbers.
 	const u16 *entries = (const u16 *)logo_bin;
-	u16 *pal = screen == SCREEN_TOP ? BG_PALETTE : BG_PALETTE_SUB;
+	volatile u16 *pal = screen == SCREEN_TOP ? BG_PALETTE : BG_PALETTE_SUB;
 	for (int i = 0; i < LOGO_COLOURS; i++) pal[LOGO_PALETTE_BASE + i] = entries[i];
 
 	const u32 *src = (const u32 *)(logo_bin + LOGO_COLOURS * 2);

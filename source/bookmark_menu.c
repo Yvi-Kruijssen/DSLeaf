@@ -29,6 +29,13 @@ void list_menu_clamp(ListMenu *m, int count, int visible) {
 	m->changed = true;
 }
 
+void list_menu_select(ListMenu *m, int count, int index, int visible) {
+	if (index < 0 || index >= count) return;
+	if (m->selected != index) m->changed = true;
+	m->selected = index;
+	keep_visible(m, count, visible);
+}
+
 BmEvent list_menu_update(ListMenu *m, int count, uint32_t actions, int visible, bool can_delete) {
 	BmEvent e = { BM_EVENT_NONE, 0 };
 	int before = m->selected, before_top = m->top;
@@ -81,28 +88,11 @@ BmEvent bookmark_menu_update(BookmarkMenu *m, const BookMarks *marks, uint32_t a
 	return list_menu_update(m, marks->count, actions, visible, true);
 }
 
-// ---- Text for boxes of different widths ----
+// ---- The tabs ----
 
 ReadingTab reading_tab_step(ReadingTab tab, int step, bool with_page) {
 	int count = with_page ? 3 : 2;
 	int t = ((int)tab + step) % count;
 	if (t < 0) t += count;
 	return (ReadingTab)t;
-}
-
-bool reading_menu_full_header(int width, bool with_page) {
-	return width >= (int)(strlen("Contents") + 1 + strlen("Bookmarks 20/20") + (with_page ? 1 + strlen("Page") : 0));
-}
-
-const char *reading_menu_hint(ReadingTab tab, int width) {
-	static const char *const bookmarks[] = { "A go Sel del B back L/R tab", "A go Sel del B back", "A go B back" };
-	static const char *const contents[] = { "A go  B back  L/R tab", "A go B back" };
-	static const char *const page[] = { "^v value <> digit A go B back", "^v value <> digit A go", "A go B back" };
-	const char *const *list = tab == TAB_CONTENTS ? contents : (tab == TAB_PAGE ? page : bookmarks);
-	int n = tab == TAB_CONTENTS ? 2 : 3;
-
-	for (int i = 0; i < n; i++) {
-		if ((int)strlen(list[i]) <= width) return list[i];
-	}
-	return list[n - 1];
 }

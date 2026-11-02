@@ -49,14 +49,35 @@ typedef enum {
 	BD_BTN_HI,    // label of the focused button
 	BD_BTN_EDGE,  // thin outline of a button
 	BD_HINT,      // small text on the dark background below a panel
+	BD_SHADOW,    // the shadow of a pop-up over the page
 	BD_COUNT,
 } BackdropColour;
 
 // Fills the screen with BD_BACK and shows the picture behind the text.
 void render_backdrop_begin(Screen screen);
 void render_backdrop_rect(Screen screen, int x, int y, int w, int h, BackdropColour colour);
-// Draws 8x8 text at a pixel position (not on the cell grid) in the current tile font.
+// Draws 8x8 text at a pixel position (not on the cell grid). The font is the menu font set with
+// render_set_ui_font, whatever font the book uses.
 void render_backdrop_text(Screen screen, int x, int y, const char *text, BackdropColour colour);
+
+// The same at `scale` times the size (2 for large digits).
+void render_backdrop_text_scaled(Screen screen, int x, int y, const char *text, BackdropColour colour, int scale);
+
+// The same for UTF-8 text, cut at `max_width` pixels. Returns the width drawn in pixels.
+int render_backdrop_text_utf8(Screen screen, int x, int y, const char *text, BackdropColour colour, int max_width);
+
+// The font the pictures use for their text (the built-in 8x8 menu font). Call once.
+void render_set_ui_font(const Font *font);
+
+// ---- A pop-up over the reading page (decision 066) ----
+//
+// Starts a pop-up on `screen`: the cells of the page under the rectangle are blanked (tile fonts), or
+// the picture is drawn over the page (pixel fonts), so the render_backdrop calls that follow draw
+// the pop-up on top of the page. Coordinates are those of the page as it is held (decision 049): when
+// the page is rotated, everything drawn with the render_backdrop calls is turned with it. The rectangle
+// is the area that will be drawn (with its shadow). The pop-up goes away when the page is drawn again
+// (render_clear).
+void render_popup_begin(Screen screen, int x, int y, int w, int h);
 
 // Sets up both engines. Call once at startup.
 void render_init(void);
