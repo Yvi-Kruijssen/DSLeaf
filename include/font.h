@@ -52,13 +52,13 @@ bool font_from_bytes(Font *font, const uint8_t *data, size_t size);
 
 // A font that can be chosen in Settings.
 typedef struct {
-	char name[64]; // "default", or the file name in /DSLeaf/Fonts
+	char name[64]; // "default" (8x8), "builtin-6x12", or the file name in /DSLeaf/Fonts
 	int width, height;
 } FontChoice;
 
 #define FONT_CHOICES_MAX 16
 
-// Lists the built-in font first, then the valid fonts in /DSLeaf/Fonts sorted by
+// Lists the two built-in fonts first (8x8 and 6x12), then the valid fonts in /DSLeaf/Fonts sorted by
 // name, ignoring case. Files that are not fonts, folders, and names that cannot
 // be saved in config.txt are left out. Returns how many were listed (at least 1).
 int font_list(FontChoice *out, int max);

@@ -9,9 +9,10 @@ of a row byte is the leftmost pixel. An 8x8 or 8x16 font is written as a raw fil
 of 2048 or 4096 bytes. Any other size gets an 8 byte header ("DSLF", 1, width,
 height, 0) in front of the glyph rows (see docs/fonts.md).
 
-Fonts have their own licences. Terminus is under the SIL Open Font License, which
-does not allow a converted copy to be distributed under the name "Terminus Font",
-so keep converted files on your own SD card and do not add them to this repository.
+Fonts have their own licences. Terminus is under the SIL Open Font License, which asks that a converted copy
+carries the copyright notice and the licence and does not use the name "Terminus Font" (see
+third_party/terminus/README.md). A converted font put on your own SD card is yours to keep; the 6x12 one is
+built into DSLeaf under those conditions (tools/fnt2c.py).
 """
 import sys
 

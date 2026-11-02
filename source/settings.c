@@ -4,6 +4,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "font_builtin.h"
 #include "input.h"
 
 void settings_open(SettingsMenu *m) {
@@ -35,8 +36,6 @@ static int font_index(const SettingsMenu *m, const Config *c) {
 	for (int i = 0; i < m->font_count; i++) {
 		if (strcmp(m->fonts[i].name, c->font) == 0) return i;
 	}
-	// The default font is not on the card: the book uses the built-in font, so show that.
-	if (strcmp(c->font, CONFIG_FONT_DEFAULT) == 0) return 0;
 	return -1;
 }
 
@@ -69,6 +68,8 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 			snprintf(out, cap, "(missing)");
 		} else if (i == 0) {
 			snprintf(out, cap, "Built-in 8x8");
+		} else if (strcmp(m->fonts[i].name, FONT_NAME_6X12) == 0) {
+			snprintf(out, cap, "Built-in 6x12");
 		} else {
 			snprintf(out, cap, "%s", m->fonts[i].name);
 			size_t n = strlen(out);
