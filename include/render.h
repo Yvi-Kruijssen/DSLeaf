@@ -129,6 +129,15 @@ void render_clear(Screen screen);
 void render_show_logo(Screen screen);
 void render_hide_logo(Screen screen);
 
+// The start-up animation (decision 084): the logo is on the bottom screen and the top screen is plain
+// logo green. render_logo_start puts the logo in both bitmap layers (the top one out of sight below
+// its screen), render_logo_slide(d) moves it up by d pixels (0 to 192), so it leaves the bottom
+// screen and comes in at the bottom of the top one, and render_logo_slide_end puts both layers back
+// (the top screen then shows the whole logo, the bottom one is plain green until it is drawn on).
+void render_logo_start(void);
+void render_logo_slide(int pixels);
+void render_logo_slide_end(void);
+
 // Fades one screen: 0 is normal and -16 is black.
 void render_fade(Screen screen, int level);
 

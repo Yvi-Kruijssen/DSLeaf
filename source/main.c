@@ -511,12 +511,11 @@ int main(void) {
 	input_init();
 	input_set_context(INPUT_MENU);
 
-	// The logo goes up on both screens straight away, and the card and the
-	// settings load while it is showing (decision 047).
+	// The logo goes up on the bottom screen straight away (the top one is plain green), and the card and
+	// the settings load while it is showing (decisions 047 and 084). It later slides up onto the top screen.
 	irqSet(IRQ_VBLANK, count_vblank);
-	render_show_logo(SCREEN_TOP);
-	top_logo = true;
-	render_show_logo(SCREEN_BOTTOM);
+	render_logo_start();
+	top_logo = true; // it is on the top screen when the slide is over
 
 	storage_init();
 	config_load(&config);
@@ -524,8 +523,8 @@ int main(void) {
 	render_set_theme(config.theme);
 	rebuild_menu();
 
-	// Three seconds, or until a button or the touchscreen is pressed. The bottom
-	// screen fades out and the main menu fades in. The top screen keeps the logo.
+	// Three seconds, or until a button or the touchscreen is pressed, then the logo slides up
+	// onto the top screen in two seconds. The bottom screen fades out and the main menu fades in.
 	Startup startup;
 	startup_init(&startup);
 	while (startup.phase != STARTUP_DONE && pmMainLoop()) {
@@ -533,7 +532,9 @@ int main(void) {
 		input_update();
 
 		render_fade(SCREEN_BOTTOM, startup_update(&startup, vblanks, input_any_pressed()));
+		if (startup.phase == STARTUP_SLIDE || startup.slide_done) render_logo_slide(startup.slide);
 		if (startup.switch_now) {
+			render_logo_slide_end();
 			render_hide_logo(SCREEN_BOTTOM); // black now: swap the logo for the menu
 			main_menu_invalidate(&menu);
 			main_menu_draw(&menu, SCREEN_BOTTOM);

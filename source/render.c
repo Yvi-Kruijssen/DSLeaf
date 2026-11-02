@@ -36,6 +36,7 @@ static bool logo[2];
 // colours in palette entries 192 up, after the logo's.
 #define BACKDROP_PALETTE_BASE 192
 static bool backdrop[2];
+static bool logo_green;         // palette entry 0 is the logo's green for the start-up slide
 static bool picture_palette[2]; // the palette holds a picture's colours (decision 075)
 static bool popup_rot[2];     // the picture is drawn turned, like a rotated page (decision 066)
 static const Font *ui_font;   // the font of the text in pictures, the built-in 8x8 font
@@ -105,7 +106,7 @@ static void apply_theme(void) {
 	const Palette *t = &palettes[theme];
 	for (int s = 0; s < 2; s++) {
 		for (int style = 0; style < STYLE_COUNT; style++) {
-			palette[s][style * 16 + 0] = t->bg;
+			if (!(logo_green && style == 0)) palette[s][style * 16 + 0] = t->bg;
 			palette[s][style * 16 + 1] = t->fg[style];
 		}
 	}
@@ -427,6 +428,36 @@ void render_hide_logo(Screen screen) {
 	logo[screen] = false;
 	fb_dirty[screen] = true; // the bitmap layer was overwritten, so a pixel font has to copy its page again
 	apply_layers();
+}
+
+void render_logo_start(void) {
+	render_show_logo(SCREEN_TOP);
+	render_show_logo(SCREEN_BOTTOM);
+	// What shows where the bitmap layer has nothing is colour 0. Make it the logo's own background
+	// green (the colour of its first pixel) so the screen above the logo, and what the logo leaves
+	// behind, is that green.
+	const u16 *entries = (const u16 *)logo_bin;
+	u16 green = entries[logo_bin[LOGO_COLOURS * 2]];
+	logo_green = true;
+	for (int s = 0; s < 2; s++) {
+		palette[s][0] = green;
+		bgWrapOff(bitmap_id[s]);
+	}
+	render_logo_slide(0);
+}
+
+void render_logo_slide(int pixels) {
+	bgSetScroll(bitmap_id[SCREEN_BOTTOM], 0, pixels);
+	bgSetScroll(bitmap_id[SCREEN_TOP], 0, pixels - PIX_H);
+	bgUpdate();
+}
+
+void render_logo_slide_end(void) {
+	bgSetScroll(bitmap_id[SCREEN_BOTTOM], 0, 0);
+	bgSetScroll(bitmap_id[SCREEN_TOP], 0, 0);
+	bgUpdate();
+	logo_green = false;
+	apply_theme(); // entry 0 is the theme's background again
 }
 
 void render_fade(Screen screen, int level) {
