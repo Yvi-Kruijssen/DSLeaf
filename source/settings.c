@@ -34,6 +34,8 @@ static int font_index(const SettingsMenu *m, const Config *c) {
 	for (int i = 0; i < m->font_count; i++) {
 		if (strcmp(m->fonts[i].name, c->font) == 0) return i;
 	}
+	// The default font is not on the card: the book uses the built-in font, so show that.
+	if (strcmp(c->font, CONFIG_FONT_DEFAULT) == 0) return 0;
 	return -1;
 }
 

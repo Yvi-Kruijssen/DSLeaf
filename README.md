@@ -54,7 +54,7 @@ For real hardware, copy `DSLeaf.nds` to the SD card of your flashcart.
 
 ## Installing books
 
-Put your `.epub` files in a `Books` folder at the root of the SD card. DSLeaf stores its own files (settings, bookmarks, extra fonts) in a `DSLeaf` folder on the same card. To use another font, put a `.fnt` file in `DSLeaf/Fonts` (8x8, 8x16 or other sizes such as 6x12, made with `tools/bdf2fnt.py`) and pick it in Settings.
+Put your `.epub` files in a `Books` folder at the root of the SD card. DSLeaf stores its own files (settings, bookmarks, extra fonts) in a `DSLeaf` folder on the same card. The default reading font is Terminus 6x12 if `DSLeaf/Fonts/Terminus-6x12.fnt` is on the card (it is not included, see the font licence below), otherwise the built-in 8x8 font. To use another font, put a `.fnt` file in `DSLeaf/Fonts` (8x8, 8x16 or other sizes such as 6x12, made with `tools/bdf2fnt.py`) and pick it in Settings.
 
 ## Licence
 

@@ -9,7 +9,10 @@
 #include "theme.h"
 
 #define CONFIG_PATH "/DSLeaf/config.txt"
-#define CONFIG_FONT_MAX 64 // file name in /DSLeaf/Fonts, or "default"
+#define CONFIG_FONT_MAX 64 // file name in /DSLeaf/Fonts, or "default" (the built-in font)
+// The font a new installation asks for (decision 058). When the file is not in /DSLeaf/Fonts the
+// built-in font is used and Settings shows it as the built-in font, not as missing.
+#define CONFIG_FONT_DEFAULT "Terminus-6x12.fnt"
 #define CONFIG_GAP_MAX 2       // blank lines between paragraphs
 #define CONFIG_INDENT_MAX 4    // first-line indent, in columns
 #define CONFIG_MARGIN_MAX 4    // empty columns at each side of the text

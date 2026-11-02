@@ -17,7 +17,7 @@ void config_set_defaults(Config *c) {
 	c->margin = 1;           // decision 026
 	c->line_spacing = 1;     // decision 050
 	c->footer = FOOTER_BOTH; // decision 056
-	snprintf(c->font, sizeof c->font, "default");
+	snprintf(c->font, sizeof c->font, "%s", CONFIG_FONT_DEFAULT);
 }
 
 // A font name is a plain file name. Anything that could point outside the
