@@ -9,16 +9,25 @@
 
 #include "render.h"
 
-#define PAPER_PANEL_X 4
-#define PAPER_PANEL_Y 4
-#define PAPER_PANEL_W 248
-#define PAPER_RULE_X 12
-#define PAPER_RULE_W 232
+// The menus keep 15 pixels free above and below, and 10 at the sides (decision 061): a glass
+// protector on a Game Boy Macro can hide the edges of the screen. Nothing they draw is outside
+// x 10 to 245 and y 15 to 176.
+#define PAPER_SAFE_TOP 15
+#define PAPER_SAFE_BOTTOM 15
+#define PAPER_SAFE_SIDE 10
+#define PAPER_PANEL_X PAPER_SAFE_SIDE
+#define PAPER_PANEL_Y PAPER_SAFE_TOP
+#define PAPER_PANEL_W (256 - 2 * PAPER_SAFE_SIDE)
+#define PAPER_TITLE_Y 20      // the title is drawn at a pixel position (not on the text grid), and the line under it
+#define PAPER_TITLE_LINE_Y 31
+#define PAPER_FIRST_ROW 5     // the first text row of a list
+#define PAPER_RULE_X (PAPER_PANEL_X + 8)
+#define PAPER_RULE_W (PAPER_PANEL_W - 16)
 
 // Starts the picture and draws the panel, `height` pixels high from y = 4.
 void paper_begin(Screen screen, int height);
 
-// The title, in the accent colour on text row 1, with the line below it.
+// The title, in the accent colour, centred, with the line below it.
 void paper_title(Screen screen, const char *title);
 
 // A thin ruled line just below the text on `row` (the paper lines of a list).

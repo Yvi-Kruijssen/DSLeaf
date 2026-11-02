@@ -33,6 +33,6 @@ bool main_menu_draw(MainMenu *m, Screen screen) {
 	paper_button(screen, MENU_BUTTON_X(0), MENU_BUTTON_Y, MENU_BUTTON_W, MENU_BUTTON_H, "Open", open_pressed, open_pressed, !open_enabled && !open_pressed);
 	paper_button(screen, MENU_BUTTON_X(1), MENU_BUTTON_Y, MENU_BUTTON_W, MENU_BUTTON_H, "Library", m->focus == FOCUS_LIBRARY && !open_pressed, false, false);
 	paper_button(screen, MENU_BUTTON_X(2), MENU_BUTTON_Y, MENU_BUTTON_W, MENU_BUTTON_H, "Settings", m->focus == FOCUS_SETTINGS && !open_pressed, false, false);
-	if (m->notice[0]) render_puts_utf8_clip(screen, 1, 23, m->notice, STYLE_ERROR, 31);
+	if (m->notice[0]) render_puts_utf8_clip(screen, 2, MENU_NOTICE_ROW, m->notice, STYLE_ERROR, 30);
 	return true;
 }

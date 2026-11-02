@@ -70,15 +70,14 @@ bool main_menu_draw(MainMenu *menu, Screen screen);
 // Positions, shared by the logic (touch) and the drawing (decision 053). The
 // book titles are tile text on the 8x8 grid, everything else is a picture in
 // pixels. Each book has a band of paper, 24 pixels high, with a ruled line.
-#define MENU_TITLE_ROW   1
-#define MENU_BOOK_ROW(i) (4 + 3 * (i))        // the text row of book i
-#define MENU_BAND_Y(i)   (24 + 24 * (i))      // top of the band of book i
+#define MENU_BOOK_ROW(i) (5 + 3 * (i))        // the text row of book i
+#define MENU_BAND_Y(i)   (32 + 24 * (i))      // top of the band of book i
 #define MENU_BAND_H      24
-#define MENU_PANEL_Y     4
-#define MENU_PANEL_H     120
-#define MENU_BUTTON_Y    144
+#define MENU_PANEL_H     100                  // the panel starts at y 15 (paper.h)
+#define MENU_BUTTON_Y    136
+#define MENU_NOTICE_ROW  21                   // the warning under the buttons
 #define MENU_BUTTON_H    24
 #define MENU_BUTTON_W    72
-#define MENU_BUTTON_X(i) (8 + 84 * (i))       // 0 Open, 1 Library, 2 Settings
+#define MENU_BUTTON_X(i) (10 + 82 * (i))      // 0 Open, 1 Library, 2 Settings: x 10 to 245
 
 #endif

@@ -12,9 +12,9 @@
 
 #define LIBRARY_MAX 512      // more files than this are left out
 #define LIBRARY_NAME_MAX 160 // longer file names are left out
-#define LIBRARY_FIRST_ROW 4  // text row of the first book
+#define LIBRARY_FIRST_ROW 5  // text row of the first book
 #define LIBRARY_ROW_STEP 2   // text rows for each book: a line of paper (decision 059)
-#define LIBRARY_ROWS 9       // books on screen, at rows 4, 6, ... 20
+#define LIBRARY_ROWS 8       // books on screen, at rows 5, 7, ... 19
 
 typedef struct {
 	char name[LIBRARY_NAME_MAX]; // file name in /Books, with the .epub ending

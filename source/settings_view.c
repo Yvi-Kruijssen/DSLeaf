@@ -10,16 +10,17 @@
 #include "render.h"
 #include "settings.h"
 
-#define FIRST_ROW 4
-#define VALUE_END 30     // the value ends at this column
-#define PANEL_H 176
+#define FIRST_ROW 5
+#define VALUE_END 29     // the value ends at this column (x 239, inside the panel)
+#define PANEL_H 149      // the panel is y 15 to 163
 #define BUTTON_W 104     // two buttons side by side
 #define BUTTON_H 18
-#define BUTTON_Y 120
+#define BUTTON_Y 116
 #define PREVIEW_X 16
 #define RESET_X 136
-#define HELP_RULE_Y 150
-#define HELP_ROW 19      // two help lines, then the size or a note
+#define HELP_RULE_Y 139
+#define HELP_ROW 18      // two lines: the help, then the second help line (or the size or a note)
+#define HINT_Y 167       // below the panel, ending at y 174
 
 bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 	if (!m->redraw) return false;
@@ -57,24 +58,25 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 	const char *line1, *line2;
 	settings_help((Setting)m->selected, &line1, &line2);
 	render_puts(screen, 2, HELP_ROW, line1, STYLE_DIM);
-	render_puts(screen, 2, HELP_ROW + 1, line2, STYLE_DIM);
 
 	if (m->selected == SETTING_FONT || m->selected == SETTING_LINE) {
-		// How much text a page of this font holds, with the margins and spacing as set now.
+		// The second line is how much text a page of this font holds, with the margins and spacing as set now.
 		int w, h;
 		settings_font_size(m, c, &w, &h);
 		Font size = { .width = w, .height = h, .line_gap = c->line_spacing };
 		if (m->selected == SETTING_LINE && font_is_tile(&size)) {
-			render_puts(screen, 2, HELP_ROW + 2, "This font ignores spacing.", STYLE_NORMAL);
+			render_puts(screen, 2, HELP_ROW + 1, "This font ignores spacing.", STYLE_NORMAL);
 		} else {
 			int cols, rows;
 			reader_geometry(&size, c->margin, c->rotate, &cols, &rows);
 			char info[40];
 			snprintf(info, sizeof info, "Size %dx%d, page %dx%d", w, h, cols, rows);
-			render_puts(screen, 2, HELP_ROW + 2, info, STYLE_NORMAL);
+			render_puts(screen, 2, HELP_ROW + 1, info, STYLE_NORMAL);
 		}
+	} else {
+		render_puts(screen, 2, HELP_ROW + 1, line2, STYLE_DIM);
 	}
 
-	paper_hint(screen, 12, 183, "Left/Right change  B back");
+	paper_hint(screen, 12, HINT_Y, "Left/Right change  B back");
 	return true;
 }

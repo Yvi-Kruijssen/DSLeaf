@@ -8,7 +8,8 @@
 #include "paper.h"
 
 #define TEXT_END_COL 30 // the names stop before the panel edge
-#define PANEL_H 176
+#define PANEL_H 153        // the panel is y 15 to 167
+#define HINT_Y 169         // below the panel, ending at y 176
 #define ERROR_TEXT " - error"
 
 bool library_draw(Library *lib, Screen screen) {
@@ -49,12 +50,12 @@ bool library_draw(Library *lib, Screen screen) {
 	}
 
 	// Below the panel: key hints, the position in the list and a note when files were left out.
-	paper_hint(screen, 12, 183, "A open  B back");
-	if (lib->incomplete) paper_hint(screen, 12 + 15 * 8, 183, "+more");
+	paper_hint(screen, 12, HINT_Y, "A open  B back");
+	if (lib->incomplete) paper_hint(screen, 12 + 15 * 8, HINT_Y, "+more");
 	if (lib->count > 0) {
 		char pos[16];
 		int n = snprintf(pos, sizeof pos, "%d/%d", lib->selected + 1, lib->count);
-		paper_hint(screen, 244 - n * 8, 183, pos);
+		paper_hint(screen, 244 - n * 8, HINT_Y, pos);
 	}
 	return true;
 }

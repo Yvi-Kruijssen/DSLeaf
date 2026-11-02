@@ -22,8 +22,8 @@ void paper_begin(Screen screen, int height) {
 }
 
 void paper_title(Screen screen, const char *title) {
-	render_puts(screen, (32 - (int)strlen(title)) / 2, 1, title, STYLE_ACCENT);
-	render_backdrop_rect(screen, PAPER_RULE_X, 20, PAPER_RULE_W, 2, BD_ACCENT);
+	render_backdrop_text(screen, (256 - (int)strlen(title) * 8) / 2, PAPER_TITLE_Y, title, BD_ACCENT);
+	render_backdrop_rect(screen, PAPER_RULE_X, PAPER_TITLE_LINE_Y, PAPER_RULE_W, 2, BD_ACCENT);
 }
 
 void paper_rule(Screen screen, int row) {
@@ -38,7 +38,7 @@ void paper_arrow(Screen screen, int row) {
 	int mid = row * 8 + 4;
 	for (int dy = -4; dy <= 4; dy++) {
 		int w = 5 - (dy < 0 ? -dy : dy);
-		render_backdrop_rect(screen, 10, mid + dy, w + 1, 1, BD_ACCENT);
+		render_backdrop_rect(screen, PAPER_PANEL_X + 6, mid + dy, w + 1, 1, BD_ACCENT);
 	}
 }
 
