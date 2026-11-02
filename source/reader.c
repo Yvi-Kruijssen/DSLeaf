@@ -11,8 +11,9 @@ void reader_geometry(const Font *font, int margin, bool rotated, int *cols, int 
 	// as many cells as fit in the 256 by 192 pixel screen, which pixbuf.c works out.
 	int grid_cols, grid_rows;
 	if (font_is_tile(font)) {
-		grid_cols = rotated ? 24 : 32;
-		grid_rows = (rotated ? 32 : 24) / (font->height / 8);
+		int safe_rows = font_safe_tile_rows(font); // tile rows kept free at the top and the bottom (decision 062)
+		grid_cols = rotated ? 24 - 2 * safe_rows : 32;
+		grid_rows = (rotated ? 32 : 24 - 2 * safe_rows) / (font->height / 8);
 	} else {
 		grid_cols = pix_cols(font, rotated);
 		grid_rows = pix_rows(font, rotated);

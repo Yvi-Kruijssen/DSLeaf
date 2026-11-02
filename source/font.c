@@ -2,6 +2,11 @@
 
 #include <string.h>
 
+int font_safe_tile_rows(const Font *font) {
+	int rows = (font->safe + 7) / 8;
+	return rows < 0 ? 0 : (rows > 4 ? 4 : rows);
+}
+
 bool font_is_tile(const Font *font) {
 	return font->width == 8 && (font->height == 8 || font->height == 16);
 }

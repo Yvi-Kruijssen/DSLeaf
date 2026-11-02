@@ -8,6 +8,10 @@
 
 #define FILE_CAP 1024
 
+int config_vmargin_px(const Config *c) {
+	return 8 * (1 + (c->vmargin > CONFIG_VMARGIN_MAX ? CONFIG_VMARGIN_DEFAULT : c->vmargin));
+}
+
 void config_set_defaults(Config *c) {
 	c->display = DISPLAY_DUAL;
 	c->theme = THEME_NORMAL;
@@ -17,6 +21,7 @@ void config_set_defaults(Config *c) {
 	c->margin = 1;           // decision 026
 	c->line_spacing = 1;     // decision 050
 	c->footer = FOOTER_BOTH; // decision 056
+	c->vmargin = CONFIG_VMARGIN_DEFAULT; // 16 pixels, decision 062
 	snprintf(c->font, sizeof c->font, "%s", CONFIG_FONT_DEFAULT);
 }
 
@@ -77,6 +82,10 @@ static void apply(Config *c, const char *key, const char *value) {
 		else if (strcmp(value, "page") == 0) c->footer = FOOTER_PAGE;
 		else if (strcmp(value, "percent") == 0) c->footer = FOOTER_PERCENT;
 		else if (strcmp(value, "none") == 0) c->footer = FOOTER_NONE;
+	} else if (strcmp(key, "vert_margin") == 0) { // in pixels
+		if (strcmp(value, "8") == 0) c->vmargin = 0;
+		else if (strcmp(value, "16") == 0) c->vmargin = 1;
+		else if (strcmp(value, "24") == 0) c->vmargin = 2;
 	} else if (strcmp(key, "line_spacing") == 0) {
 		parse_number(value, CONFIG_LINE_MAX, &c->line_spacing);
 	} else if (strcmp(key, "font") == 0) {
@@ -105,11 +114,12 @@ void config_parse(Config *c, const char *text) {
 
 int config_format(const Config *c, char *buf, size_t cap) {
 	int n = snprintf(buf, cap,
-	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\nline_spacing=%d\nfooter=%s\n",
+	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\nline_spacing=%d\nfooter=%s\nvert_margin=%d\n",
 	                 c->display == DISPLAY_SINGLE ? "single" : "dual",
 	                 c->theme == THEME_DARK ? "dark" : c->theme == THEME_SEPIA ? "sepia" : "normal", c->font,
 	                 c->rotate ? 1 : 0, c->paragraph_gap, c->paragraph_indent, c->margin, c->line_spacing,
-	                 c->footer == FOOTER_PAGE ? "page" : c->footer == FOOTER_PERCENT ? "percent" : c->footer == FOOTER_NONE ? "none" : "both");
+	                 c->footer == FOOTER_PAGE ? "page" : c->footer == FOOTER_PERCENT ? "percent" : c->footer == FOOTER_NONE ? "none" : "both",
+	                 config_vmargin_px(c));
 	return (n < 0 || (size_t)n >= cap) ? -1 : n;
 }
 

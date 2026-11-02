@@ -14,11 +14,11 @@
 #define VALUE_END 29     // the value ends at this column (x 239, inside the panel)
 #define PANEL_H 149      // the panel is y 15 to 163
 #define BUTTON_W 104     // two buttons side by side
-#define BUTTON_H 18
-#define BUTTON_Y 116
+#define BUTTON_H 16
+#define BUTTON_Y 124
 #define PREVIEW_X 16
 #define RESET_X 136
-#define HELP_RULE_Y 139
+#define HELP_RULE_Y 143
 #define HELP_ROW 18      // two lines: the help, then the second help line (or the size or a note)
 #define HINT_Y 167       // below the panel, ending at y 174
 
@@ -63,7 +63,7 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 		// The second line is how much text a page of this font holds, with the margins and spacing as set now.
 		int w, h;
 		settings_font_size(m, c, &w, &h);
-		Font size = { .width = w, .height = h, .line_gap = c->line_spacing };
+		Font size = { .width = w, .height = h, .line_gap = c->line_spacing, .safe = config_vmargin_px(c) };
 		if (m->selected == SETTING_LINE && font_is_tile(&size)) {
 			render_puts(screen, 2, HELP_ROW + 1, "This font ignores spacing.", STYLE_NORMAL);
 		} else {

@@ -21,6 +21,7 @@ typedef enum {
 	SETTING_FONT,
 	SETTING_FOOTER,  // page count and/or percentage in the reading footer
 	SETTING_MARGIN,  // empty columns at each side
+	SETTING_VMARGIN, // space above and below the text on the reading screens: 8, 16 or 24 pixels
 	SETTING_INDENT,  // first-line indent
 	SETTING_LINE,    // extra pixel rows between lines (pixel fonts only)
 	SETTING_GAP,     // blank lines between paragraphs

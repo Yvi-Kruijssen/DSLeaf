@@ -208,8 +208,11 @@ void render_set_theme(Theme value) {
 
 Theme render_theme(void) { return theme; }
 
-int render_cols(void) { return pixel ? pix_cols(font, rotated) : (rotated ? 24 : 32); }
-int render_rows(void) { return pixel ? pix_rows(font, rotated) : (rotated ? 32 : 24) / tiles_per_glyph(); }
+// Tile rows kept free at the top and the bottom for the font's safe margin (decision 062).
+static int safe_rows(void) { return font ? font_safe_tile_rows(font) : 0; }
+
+int render_cols(void) { return pixel ? pix_cols(font, rotated) : (rotated ? 24 - 2 * safe_rows() : 32); }
+int render_rows(void) { return pixel ? pix_rows(font, rotated) : (rotated ? 32 : 24 - 2 * safe_rows()) / tiles_per_glyph(); }
 
 void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 	if (col < 0 || col >= render_cols() || row < 0 || row >= render_rows()) return;
@@ -225,7 +228,7 @@ void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 
 	if (!rotated) {
 		// A tall glyph is two tiles, one above the other.
-		int y = row * per;
+		int y = row * per + safe_rows();
 		map[screen][y * GRID_W + col] = tile;
 		if (per == 2) map[screen][(y + 1) * GRID_W + col] = tile + 1;
 		return;
@@ -234,7 +237,7 @@ void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 	// Rotated: the page runs down the screen, so a page column becomes a
 	// screen row and page rows count from the right-hand edge. A tall glyph
 	// turned on its side is two tiles side by side, the left one first.
-	int y = col;
+	int y = col + safe_rows();
 	int x = GRID_W - per * (row + 1);
 	map[screen][y * GRID_W + x] = tile;
 	if (per == 2) map[screen][y * GRID_W + x + 1] = tile + 1;

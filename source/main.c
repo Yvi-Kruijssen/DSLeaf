@@ -113,6 +113,7 @@ static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 static bool open_book(const char *path) {
 	font_load_named(&reading_font, config.font); // falls back to the built-in font
 	reading_font.line_gap = config.line_spacing;  // only pixel fonts use it (decision 050)
+	reading_font.safe = config_vmargin_px(&config); // space above and below the text (decision 062)
 	font_set_bookmark_glyph(&reading_font);        // the icon of the status row (decision 054)
 	int cols, rows;
 	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
@@ -209,6 +210,7 @@ static Preview preview; // 4 KB, kept off the stack
 static void show_preview(void) {
 	font_load_named(&reading_font, config.font);
 	reading_font.line_gap = config.line_spacing;
+	reading_font.safe = config_vmargin_px(&config);
 	int cols, rows;
 	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
 	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent };

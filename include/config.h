@@ -31,6 +31,11 @@ typedef enum {
 	FOOTER_COUNT,
 } FooterInfo;
 
+// The space above and below the text on the reading screens (decision 062): 8, 16 or 24 pixels,
+// the step being a row of the text grid. Stored as a step 0 to 2.
+#define CONFIG_VMARGIN_MAX 2
+#define CONFIG_VMARGIN_DEFAULT 1 // 16 pixels
+
 typedef struct {
 	DisplayMode display;
 	Theme theme;
@@ -40,10 +45,14 @@ typedef struct {
 	uint8_t margin;           // 0 to CONFIG_MARGIN_MAX
 	uint8_t line_spacing;     // 0 to CONFIG_LINE_MAX, pixel fonts only
 	FooterInfo footer;        // what the reading footer shows (decision 056)
+	uint8_t vmargin;          // 0 to CONFIG_VMARGIN_MAX: 8, 16 or 24 pixels above and below the text (decision 062)
 	char font[CONFIG_FONT_MAX];
 } Config;
 
 void config_set_defaults(Config *config);
+
+// The space above and below the text on the reading screens in pixels: 8, 16 or 24 (decision 062).
+int config_vmargin_px(const Config *config);
 
 // Reads settings from text. `invert=0` and `invert=1` from older versions still
 // work and mean the normal and the dark theme. Unknown keys, bad values and bad lines are ignored,
