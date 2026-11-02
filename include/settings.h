@@ -14,15 +14,17 @@
 #include "font.h"
 
 typedef enum {
+	// The order of the list on screen (decision 060).
 	SETTING_SCREEN,  // dual or single
+	SETTING_ORIENTATION, // normal or rotated reading
 	SETTING_THEME,
 	SETTING_FONT,
-	SETTING_LINE,    // extra pixel rows between lines (pixel fonts only)
-	SETTING_ORIENTATION, // normal or rotated reading
-	SETTING_GAP,     // blank lines between paragraphs
-	SETTING_INDENT,  // first-line indent
-	SETTING_MARGIN,  // empty columns at each side
 	SETTING_FOOTER,  // page count and/or percentage in the reading footer
+	SETTING_MARGIN,  // empty columns at each side
+	SETTING_INDENT,  // first-line indent
+	SETTING_LINE,    // extra pixel rows between lines (pixel fonts only)
+	SETTING_GAP,     // blank lines between paragraphs
+	// Two buttons below the list, side by side: Left and Right move between them.
 	SETTING_PREVIEW, // shows a sample page (A)
 	SETTING_RESET,   // back to the defaults (asks for a second A)
 	SETTING_COUNT,

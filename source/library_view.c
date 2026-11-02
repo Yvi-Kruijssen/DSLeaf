@@ -1,9 +1,14 @@
+// The Library on paper (decision 059): the same panel, title and ruled lines as the main menu.
+// Each book has two text rows (one line of paper), so 9 fit.
 #include "library.h"
 
 #include <stdio.h>
 #include <string.h>
 
-#define TEXT_END_COL 31
+#include "paper.h"
+
+#define TEXT_END_COL 30 // the names stop before the panel edge
+#define PANEL_H 176
 #define ERROR_TEXT " - error"
 
 bool library_draw(Library *lib, Screen screen) {
@@ -11,27 +16,25 @@ bool library_draw(Library *lib, Screen screen) {
 	lib->redraw = false;
 
 	render_clear(screen);
-
-	const char *title = "Library";
-	render_puts(screen, (32 - (int)strlen(title)) / 2, 1, title, STYLE_HIGHLIGHT);
-	for (int c = 1; c < 31; c++) render_putc(screen, c, 2, '-', STYLE_HIGHLIGHT);
+	paper_begin(screen, PANEL_H);
+	paper_title(screen, "Library");
+	for (int k = 0; k < LIBRARY_ROWS; k++) paper_rule(screen, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP * k);
 
 	if (lib->unreadable) {
-		render_puts(screen, 2, LIBRARY_FIRST_ROW, "Cannot read the Books folder", STYLE_ERROR);
-		render_puts(screen, 2, LIBRARY_FIRST_ROW + 1, "Is the SD card inserted?", STYLE_DIM);
+		render_puts(screen, 3, LIBRARY_FIRST_ROW, "Cannot read the Books folder", STYLE_ERROR);
+		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Is the SD card inserted?", STYLE_DIM);
 	} else if (lib->count == 0) {
-		render_puts(screen, 2, LIBRARY_FIRST_ROW, "No EPUB files found", STYLE_DIM);
-		render_puts(screen, 2, LIBRARY_FIRST_ROW + 1, "Put .epub files in /Books", STYLE_DIM);
+		render_puts(screen, 3, LIBRARY_FIRST_ROW, "No EPUB files found", STYLE_DIM);
+		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Put .epub files in /Books", STYLE_DIM);
 	}
 
-	for (int row = 0; row < LIBRARY_ROWS; row++) {
-		int i = lib->top + row;
+	for (int k = 0; k < LIBRARY_ROWS; k++) {
+		int i = lib->top + k;
 		if (i >= lib->count) break;
 
 		const LibraryEntry *e = &lib->entry[i];
 		bool selected = i == lib->selected;
-		Style style = selected ? STYLE_HIGHLIGHT : STYLE_NORMAL;
-		int y = LIBRARY_FIRST_ROW + row;
+		int y = LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP * k;
 
 		// Show the name without .epub. Leave room for " - error" when it applies.
 		char name[LIBRARY_NAME_MAX];
@@ -39,19 +42,19 @@ bool library_draw(Library *lib, Screen screen) {
 		memcpy(name, e->name, len);
 		name[len] = '\0';
 
-		if (selected) render_putc(screen, 1, y, '>', STYLE_HIGHLIGHT);
+		if (selected) paper_arrow(screen, y);
 		int end = e->failed ? TEXT_END_COL - (int)strlen(ERROR_TEXT) : TEXT_END_COL;
-		int col = render_puts_utf8_clip(screen, 3, y, name, style, end);
+		int col = render_puts_utf8_clip(screen, 3, y, name, selected ? STYLE_ACCENT : STYLE_NORMAL, end);
 		if (e->failed) render_puts(screen, col, y, ERROR_TEXT, STYLE_ERROR);
 	}
 
-	// Footer: key hints and the position in the list.
-	render_puts(screen, 1, LIBRARY_FOOTER_ROW, "A open  B back", STYLE_DIM);
+	// Below the panel: key hints, the position in the list and a note when files were left out.
+	paper_hint(screen, 12, 183, "A open  B back");
+	if (lib->incomplete) paper_hint(screen, 12 + 15 * 8, 183, "+more");
 	if (lib->count > 0) {
 		char pos[16];
 		int n = snprintf(pos, sizeof pos, "%d/%d", lib->selected + 1, lib->count);
-		render_puts(screen, 31 - n, LIBRARY_FOOTER_ROW, pos, STYLE_DIM);
+		paper_hint(screen, 244 - n * 8, 183, pos);
 	}
-	if (lib->incomplete) render_puts(screen, 17, LIBRARY_FOOTER_ROW, "+more", STYLE_ERROR);
 	return true;
 }

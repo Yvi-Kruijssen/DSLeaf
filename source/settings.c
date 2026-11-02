@@ -92,11 +92,11 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 void settings_help(Setting s, const char **line1, const char **line2) {
 	switch (s) {
 	case SETTING_SCREEN:
-		*line1 = "Dual uses both screens, single";
-		*line2 = "only the bottom. Next book.";
+		*line1 = "Dual: both screens.";
+		*line2 = "Single: bottom. Next book.";
 		break;
 	case SETTING_THEME:
-		*line1 = "Colours of the menus and book.";
+		*line1 = "Colours of menus and book.";
 		*line2 = "Changes at once.";
 		break;
 	case SETTING_FONT:
@@ -105,10 +105,10 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		break;
 	case SETTING_ORIENTATION:
 		*line1 = "Hold the device sideways to";
-		*line2 = "read. Used when a book opens.";
+		*line2 = "Used when a book opens.";
 		break;
 	case SETTING_GAP:
-		*line1 = "Blank lines between paragraphs";
+		*line1 = "Blank lines between paras.";
 		*line2 = "Used when a book is opened.";
 		break;
 	case SETTING_INDENT:
@@ -116,7 +116,7 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		*line2 = "Used when a book is opened.";
 		break;
 	case SETTING_MARGIN:
-		*line1 = "Empty columns left and right.";
+		*line1 = "Empty columns at each side.";
 		*line2 = "Used when a book is opened.";
 		break;
 	case SETTING_LINE:
@@ -128,11 +128,11 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		*line2 = "in the footer. Next book.";
 		break;
 	case SETTING_PREVIEW:
-		*line1 = "Sample page, current settings.";
+		*line1 = "Sample page, your settings.";
 		*line2 = "Any key goes back.";
 		break;
 	case SETTING_RESET:
-		*line1 = "Put every setting back to its";
+		*line1 = "Every setting back to its";
 		*line2 = "default. Press A twice.";
 		break;
 	default:
@@ -179,23 +179,35 @@ SettingsEvent settings_update(SettingsMenu *m, Config *c, uint32_t actions) {
 		e.kind = SETTINGS_EVENT_BACK;
 		return e;
 	}
-	if (m->selected == SETTING_PREVIEW && (actions & (ACT_LEFT | ACT_RIGHT | ACT_CONFIRM))) {
-		if (actions & ACT_CONFIRM) {
-			e.kind = SETTINGS_EVENT_PREVIEW;
-			e.setting = SETTING_PREVIEW;
-		}
-		return e;
-	}
-	if (m->selected == SETTING_RESET && (actions & (ACT_LEFT | ACT_RIGHT | ACT_CONFIRM))) {
-		if (actions & ACT_CONFIRM) {
-			if (armed) {
+	// The two buttons below the list are side by side (decision 060): Left and Right move between them,
+	// Up goes back to the last setting, Down has nowhere to go, and A presses.
+	if (m->selected == SETTING_PREVIEW || m->selected == SETTING_RESET) {
+		if (actions & ACT_UP) {
+			m->selected = SETTING_PREVIEW - 1;
+			m->redraw = true;
+		} else if (actions & ACT_LEFT) {
+			if (m->selected == SETTING_RESET) {
+				m->selected = SETTING_PREVIEW;
+				m->redraw = true;
+			}
+		} else if (actions & ACT_RIGHT) {
+			if (m->selected == SETTING_PREVIEW) {
+				m->selected = SETTING_RESET;
+				m->redraw = true;
+			}
+		} else if (actions & ACT_CONFIRM) {
+			if (m->selected == SETTING_PREVIEW) {
+				e.kind = SETTINGS_EVENT_PREVIEW;
+				e.setting = SETTING_PREVIEW;
+			} else if (armed) {
 				config_set_defaults(c);
 				e.kind = SETTINGS_EVENT_CHANGED;
 				e.setting = SETTING_RESET;
+				m->redraw = true;
 			} else {
 				m->confirm_reset = true;
+				m->redraw = true;
 			}
-			m->redraw = true;
 		}
 		return e;
 	}

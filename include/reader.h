@@ -119,6 +119,11 @@ void reader_set_notice(Reader *r, const char *text);
 void reader_status_fit(const char *left, const char *right, int cols, bool prefer_left, char *out_left,
                        char *out_right, size_t cap);
 
+// The text at the right of a status row for a Progress setting (decision 056): the page count
+// and/or the percentage, separated by a space. `page` is NULL when the screen has no page to
+// number, `percent` when the percentage is not shown on that screen. Empty for FOOTER_NONE.
+void reader_footer_text(char *out, size_t cap, FooterInfo info, const char *page, const char *percent);
+
 // How far through the book, 0 to 100.
 int reader_percent(const Reader *r);
 

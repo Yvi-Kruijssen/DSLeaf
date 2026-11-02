@@ -8,6 +8,7 @@
 #ifndef DSLEAF_PREVIEW_H
 #define DSLEAF_PREVIEW_H
 
+#include "config.h"
 #include "layout.h"
 #include "render.h"
 
@@ -23,8 +24,10 @@ void preview_build(Preview *p, int cols, int rows, int pages, const LayoutStyle 
 
 // ---- Drawing (preview_view.c, needs the DS) ----
 
-// Draws the pages like the reader does: text, then a status row with "Preview".
+// Draws the pages like the reader does: text, then a status row. It shows what the reading
+// footer would for the Progress setting `footer`, with made-up numbers ("123 / 1234", "10%"),
+// so the effect of the setting can be seen (decision 060).
 // With one page it goes on the bottom screen, with two the first is on top.
-void preview_draw(const Preview *p);
+void preview_draw(const Preview *p, FooterInfo footer);
 
 #endif

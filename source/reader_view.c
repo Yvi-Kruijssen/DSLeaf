@@ -40,15 +40,6 @@ static void draw_status(const Reader *r, Screen screen, const char *left, const 
 	if (rt[0]) render_puts(screen, margin + r->cols - (int)strlen(rt), row, rt, STYLE_DIM);
 }
 
-// The text at the right of a status row: the page count and/or the percentage, as chosen in
-// Settings (decision 056). `page` is NULL when the screen has no page to number, `percent` when
-// the percentage is not shown on this screen.
-static void right_text(char *out, size_t cap, FooterInfo info, const char *page, const char *percent) {
-	bool show_page = page && (info == FOOTER_BOTH || info == FOOTER_PAGE);
-	bool show_percent = percent && (info == FOOTER_BOTH || info == FOOTER_PERCENT);
-	snprintf(out, cap, "%s%s%s", show_page ? page : "", show_page && show_percent ? " " : "", show_percent ? percent : "");
-}
-
 bool reader_draw(Reader *r, bool dual, const BookMarks *marks, FooterInfo footer) {
 	if (!r->redraw) return false;
 	r->redraw = false;
@@ -71,7 +62,7 @@ bool reader_draw(Reader *r, bool dual, const BookMarks *marks, FooterInfo footer
 
 	if (!dual) {
 		draw_page(r, &r->view[0], SCREEN_BOTTOM);
-		right_text(right, sizeof right, footer, page0, pct);
+		reader_footer_text(right, sizeof right, footer, page0, pct);
 		draw_status(r, SCREEN_BOTTOM, notice, right, page_starred(r, 0, marks));
 		return true;
 	}
@@ -79,16 +70,16 @@ bool reader_draw(Reader *r, bool dual, const BookMarks *marks, FooterInfo footer
 	// Two screens: each shows the number of its own page, and the percentage is on the bottom one, at the right
 	// like in single-screen mode.
 	draw_page(r, &r->view[0], SCREEN_TOP);
-	right_text(right, sizeof right, footer, page0, NULL);
+	reader_footer_text(right, sizeof right, footer, page0, NULL);
 	draw_status(r, SCREEN_TOP, notice, right, page_starred(r, 0, marks));
 
 	render_clear(SCREEN_BOTTOM);
 	if (r->view_count > 1) {
 		draw_page(r, &r->view[1], SCREEN_BOTTOM);
-		right_text(right, sizeof right, footer, page1, pct);
+		reader_footer_text(right, sizeof right, footer, page1, pct);
 		draw_status(r, SCREEN_BOTTOM, NULL, right, page_starred(r, 1, marks));
 	} else {
-		right_text(right, sizeof right, footer, NULL, pct); // the last page of an odd number of pages
+		reader_footer_text(right, sizeof right, footer, NULL, pct); // the last page of an odd number of pages
 		draw_status(r, SCREEN_BOTTOM, NULL, right, false);
 	}
 	return true;

@@ -291,6 +291,12 @@ void reader_resize(Reader *r, int cols, int rows, int per_view) {
 	show_page(r, page_for(r, in_window));
 }
 
+void reader_footer_text(char *out, size_t cap, FooterInfo info, const char *page, const char *percent) {
+	bool show_page = page && (info == FOOTER_BOTH || info == FOOTER_PAGE);
+	bool show_percent = percent && (info == FOOTER_BOTH || info == FOOTER_PERCENT);
+	snprintf(out, cap, "%s%s%s", show_page ? page : "", show_page && show_percent ? " " : "", show_percent ? percent : "");
+}
+
 int reader_percent(const Reader *r) {
 	if (!r->open || r->total_bytes == 0) return 0;
 

@@ -215,7 +215,7 @@ static void show_preview(void) {
 	preview_build(&preview, cols, rows, dual_screen() ? 2 : 1, &style);
 	if (dual_screen()) hide_top_logo(); // the top screen shows the first page
 	render_set_view(&reading_font, config.rotate);
-	preview_draw(&preview);
+	preview_draw(&preview, config.footer);
 	current = SCREEN_PREVIEW;
 }
 

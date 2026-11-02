@@ -48,6 +48,7 @@ typedef enum {
 	BD_BTN_DIM,   // label of a greyed out button
 	BD_BTN_HI,    // label of the focused button
 	BD_BTN_EDGE,  // thin outline of a button
+	BD_HINT,      // small text on the dark background below a panel
 	BD_COUNT,
 } BackdropColour;
 

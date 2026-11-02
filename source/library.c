@@ -134,9 +134,11 @@ LibraryEvent library_update(Library *lib, uint32_t actions, bool tapped, int tap
 	else if (actions & ACT_RIGHT) select_entry(lib, lib->selected + LIBRARY_ROWS);  // page down
 	else if ((actions & ACT_CONFIRM) && lib->count > 0) return event(LIBRARY_EVENT_OPEN, lib->selected);
 	else if (tapped) {
-		int row = tap_y / 8;
-		int index = lib->top + (row - LIBRARY_FIRST_ROW);
-		if (row >= LIBRARY_FIRST_ROW && row < LIBRARY_FIRST_ROW + LIBRARY_ROWS && index < lib->count) {
+		// A book takes the pixel rows of its text and the line of paper under it (and a little above).
+		int rel = tap_y - (LIBRARY_FIRST_ROW * 8 - 4);
+		int k = rel >= 0 ? rel / (LIBRARY_ROW_STEP * 8) : -1;
+		int index = lib->top + k;
+		if (k >= 0 && k < LIBRARY_ROWS && index < lib->count) {
 			if (index == lib->selected) return event(LIBRARY_EVENT_OPEN, index);
 			select_entry(lib, index);
 		}
