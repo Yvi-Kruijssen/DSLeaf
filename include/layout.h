@@ -23,7 +23,7 @@
 //   WORD:  REC_WORD, flags (bit 0: space before), length, then `length` bytes of UTF-8
 //   BLOCK: REC_BLOCK, kind (BlockKind), level
 //   BREAK: REC_BREAK
-//   IMAGE: REC_IMAGE
+//   IMAGE: REC_IMAGE (a picture that gets a page of its own; chaptertext.c keeps its file name)
 enum { REC_WORD = 1, REC_BLOCK = 2, REC_BREAK = 3, REC_IMAGE = 4 };
 #define REC_FLAG_SPACE 1
 
@@ -70,6 +70,8 @@ typedef struct {
 	PageStart start;
 	PageStart next;  // where the following page starts
 	bool at_end;     // nothing follows this page
+	bool picture;    // the page is one picture (line_count is 0), see REC_IMAGE (decision 075)
+	uint32_t picture_offset; // of its REC_IMAGE record
 } Page;
 
 // The very first page of a buffer.

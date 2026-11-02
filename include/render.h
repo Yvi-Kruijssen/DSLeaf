@@ -79,6 +79,23 @@ void render_set_ui_font(const Font *font);
 // (render_clear).
 void render_popup_begin(Screen screen, int x, int y, int w, int h);
 
+// ---- Pictures (decision 075) ----
+//
+// A picture page shows a picture in the area of the page above the status row. The picture is
+// drawn into the bitmap layer with its own palette (picsink.h), which replaces the picture colours
+// of the menus until the screen is cleared again.
+
+// The area of the page (as the reader holds it, see popup.h) for a picture: the text rows without
+// the status row.
+void render_picture_area(int *x, int *y, int *w, int *h);
+
+// Starts a picture on `screen`: clears it and loads the picture palette. The status row is drawn
+// with the usual calls afterwards.
+void render_picture_begin(Screen screen);
+
+// Puts one row of `w` palette entries (picsink.h) at (x, y) of the page.
+void render_picture_row(Screen screen, int x, int y, int w, const uint8_t *idx);
+
 // Sets up both engines. Call once at startup.
 void render_init(void);
 

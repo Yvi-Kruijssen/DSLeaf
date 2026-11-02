@@ -458,7 +458,57 @@ bool epub_chapter_has_text(Epub *book, int index) {
 	TextItem item;
 	while (!found && epub_chapter_next(&chapter, &item)) {
 		if (item.kind == TEXT_WORD) found = true;
+		if (item.kind == TEXT_IMAGE) {
+			char path[EPUB_PATH_MAX];
+			ImageInfo info;
+			if (epub_image_info(book, index, item.text, path, sizeof path, &info) && image_wanted(info.width, info.height)) {
+				found = true;
+			}
+		}
 	}
 	epub_chapter_close(&chapter);
 	return found;
+}
+
+// ---- Pictures ----
+
+#define PROBE_BYTES 65536
+
+bool epub_image_info(Epub *book, int chapter, const char *src, char *path, size_t cap, ImageInfo *info) {
+	if (book->txt || chapter < 0 || chapter >= book->chapter_count || cap < EPUB_PATH_MAX) return false;
+
+	char dir[EPUB_PATH_MAX];
+	snprintf(dir, sizeof dir, "%s", book->chapter[chapter]);
+	char *slash = strrchr(dir, '/');
+	if (slash) slash[1] = '\0';
+	else dir[0] = '\0';
+	if (!epub_resolve_path(dir, src, path, cap)) return false;
+
+	ZipEntry entry;
+	ZipStream stream;
+	if (!zip_find(&book->zip, path, &entry) || !zip_stream_open(&book->zip, &entry, &stream)) return false;
+
+	uint8_t *buf = malloc(PROBE_BYTES);
+	if (!buf) {
+		zip_stream_close(&stream);
+		return false;
+	}
+	size_t have = 0;
+	ProbeResult result = PROBE_NEED_MORE;
+	while (result == PROBE_NEED_MORE && have < PROBE_BYTES) {
+		size_t want = have < 512 ? 512 : 4096;
+		if (want > PROBE_BYTES - have) want = PROBE_BYTES - have;
+		int n = zip_stream_read(&stream, buf + have, want);
+		if (n <= 0) break;
+		have += (size_t)n;
+		result = image_probe(buf, have, info);
+	}
+	zip_stream_close(&stream);
+	free(buf);
+	return result == PROBE_OK;
+}
+
+bool epub_image_open(Epub *book, const char *path, ZipStream *stream) {
+	ZipEntry entry;
+	return !book->txt && zip_find(&book->zip, path, &entry) && zip_stream_open(&book->zip, &entry, stream);
 }

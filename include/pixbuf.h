@@ -29,4 +29,9 @@ int pix_rows(const Font *font, bool rotated);
 void pix_draw_glyph(uint8_t *fb, const Font *font, bool rotated, int col, int row, uint8_t glyph,
                     uint8_t value);
 
+// Where the grid of a font is on the page as the reader holds it (decision 075, for pictures): the
+// top left corner in the page coordinates of popup.h (256 x 192, or 192 x 256 when rotated), the
+// size of the grid in pixels, and the height of one row.
+void pix_page_origin(const Font *font, bool rotated, int *x, int *y, int *w, int *h, int *row_h);
+
 #endif

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "picture.h"
 #include "reader.h"
 
 // The empty columns at each side of the text: whatever the grid has left over.
@@ -17,6 +18,63 @@ static void draw_page(const Reader *r, const Page *page, Screen screen) {
 			render_putc(screen, margin + k, l, line->glyph[k], STYLE_NORMAL);
 		}
 	}
+}
+
+// ---- Picture pages (decision 075) ----
+
+typedef struct {
+	Screen screen;
+	int ax, ay, aw, ah; // the area for the picture
+	int ox, oy;         // where the shrunk picture starts in the area
+} PicTarget;
+
+static void pic_size(void *user, int w, int h) {
+	PicTarget *t = user;
+	t->ox = t->ax + (t->aw - w) / 2;
+	t->oy = t->ay + (t->ah - h) / 2;
+}
+
+static bool pic_row(void *user, int y, int w, const uint8_t *idx) {
+	PicTarget *t = user;
+	render_picture_row(t->screen, t->ox, t->oy + y, w, idx);
+	return true;
+}
+
+static void draw_status(const Reader *r, Screen screen, const char *left, const char *right, bool starred);
+
+// Shows the picture of a picture page. The status row first says the picture is loading, which can
+// take a few seconds, and then the usual row replaces it.
+static void draw_picture(Reader *r, const Page *page, Screen screen, const char *notice, const char *right, bool starred) {
+	const CtImage *image = ct_image_at(&r->text, r->text.base + page->picture_offset);
+	PicTarget t = { .screen = screen };
+	render_picture_area(&t.ax, &t.ay, &t.aw, &t.ah);
+	render_picture_begin(screen);
+	draw_status(r, screen, "Loading picture...", right, starred);
+	render_present(screen);
+
+	DecResult result = DEC_BAD;
+	if (image) result = picture_decode(&r->book, image, t.aw, t.ah, pic_row, pic_size, &t);
+	if (result != DEC_OK) {
+		render_picture_begin(screen); // wipe what was drawn so far
+		const char *text = picture_error_text(result);
+		int row = (r->rows - 1) / 2, margin = margin_of(r);
+		int len = (int)strlen(text);
+		render_puts(screen, margin + (r->cols - len) / 2, row, text, STYLE_DIM);
+	}
+	for (int c = 0; c < r->cols; c++) render_putc(screen, margin_of(r) + c, r->rows, ' ', STYLE_DIM); // the loading message
+	draw_status(r, screen, notice, right, starred);
+	render_present(screen);
+}
+
+// Draws the page in `slot` of the view on a screen, with its status row.
+static void draw_slot(Reader *r, int slot, Screen screen, const char *notice, const char *right, bool starred) {
+	const Page *page = &r->view[slot];
+	if (page->picture) {
+		draw_picture(r, page, screen, notice, right, starred);
+		return;
+	}
+	draw_page(r, page, screen);
+	draw_status(r, screen, notice, right, starred);
 }
 
 static bool page_starred(const Reader *r, int slot, const BookMarks *marks) {
@@ -61,23 +119,20 @@ bool reader_draw(Reader *r, bool dual, const BookMarks *marks, FooterInfo footer
 	const char *notice = r->notice[0] ? r->notice : NULL; // a notice takes the place of the left text for a moment
 
 	if (!dual) {
-		draw_page(r, &r->view[0], SCREEN_BOTTOM);
 		reader_footer_text(right, sizeof right, footer, page0, pct);
-		draw_status(r, SCREEN_BOTTOM, notice, right, page_starred(r, 0, marks));
+		draw_slot(r, 0, SCREEN_BOTTOM, notice, right, page_starred(r, 0, marks));
 		return true;
 	}
 
 	// Two screens: each shows the number of its own page, and the percentage is on the bottom one, at the right
 	// like in single-screen mode.
-	draw_page(r, &r->view[0], SCREEN_TOP);
 	reader_footer_text(right, sizeof right, footer, page0, NULL);
-	draw_status(r, SCREEN_TOP, notice, right, page_starred(r, 0, marks));
+	draw_slot(r, 0, SCREEN_TOP, notice, right, page_starred(r, 0, marks));
 
 	render_clear(SCREEN_BOTTOM);
 	if (r->view_count > 1) {
-		draw_page(r, &r->view[1], SCREEN_BOTTOM);
 		reader_footer_text(right, sizeof right, footer, page1, pct);
-		draw_status(r, SCREEN_BOTTOM, NULL, right, page_starred(r, 1, marks));
+		draw_slot(r, 1, SCREEN_BOTTOM, NULL, right, page_starred(r, 1, marks));
 	} else {
 		reader_footer_text(right, sizeof right, footer, NULL, pct); // the last page of an odd number of pages
 		draw_status(r, SCREEN_BOTTOM, NULL, right, false);

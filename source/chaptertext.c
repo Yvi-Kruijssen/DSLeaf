@@ -36,11 +36,24 @@ static void settle_anchors(ChapterText *ct, size_t content_end) {
 	}
 }
 
+// A link to a place that is a picture goes to the first record after the pictures, so a contents entry
+// or a link lands on the text it names and not on the illustration in front of it (decision 075).
+static void skip_images(ChapterText *ct) {
+	for (int i = 0; i < ct->watch_count; i++) {
+		uint32_t at = ct->watch_found[i];
+		if (at == 0xFFFFFFFFu || at < ct->base || at >= ct->base + ct->len) continue;
+		uint32_t rel = at - ct->base;
+		while (rel < ct->len && ct->buf[rel] == REC_IMAGE) rel++;
+		if (rel < ct->len) ct->watch_found[i] = ct->base + rel; // a chapter that is only pictures keeps its link
+	}
+}
+
 // Fills the buffer with the next window of records.
-static void fill(ChapterText *ct) {
+static void fill_window(ChapterText *ct) {
 	size_t cap = CT_SOFT_LIMIT + CT_SLACK;
 	ct->len = 0;
 	ct->has_words = false;
+	ct->image_count = 0;
 	size_t content_end = 0; // where the last word or block record ends
 
 	if (ct->split_inside) {
@@ -77,8 +90,20 @@ static void fill(ChapterText *ct) {
 			settle_anchors(ct, content_end);
 			break;
 		}
+		if (item.kind == TEXT_IMAGE) {
+			// Only pictures big enough to look at get a record (and so a page).
+			if (ct->image_count >= CT_IMAGES_MAX) continue;
+			CtImage *im = &ct->images[ct->image_count];
+			if (!epub_image_info(ct->book, ct->chapter, item.text, im->path, sizeof im->path, &im->info) ||
+			    !image_wanted(im->info.width, im->info.height)) {
+				continue;
+			}
+			im->offset = (uint32_t)ct->len;
+			ct->image_count++;
+		}
 		size_t n = record_append(ct->buf, ct->len, cap, &item);
 		if (n == 0) {
+			if (item.kind == TEXT_IMAGE) ct->image_count--;
 			// Out of room in the middle of a paragraph: carry on in the next window.
 			ct->held = item;
 			ct->have_held = true;
@@ -90,6 +115,11 @@ static void fill(ChapterText *ct) {
 		if (item.kind == TEXT_WORD || item.kind == TEXT_BLOCK) content_end = ct->len;
 		if (item.kind == TEXT_WORD) ct->has_words = true;
 	}
+}
+
+static void fill(ChapterText *ct) {
+	fill_window(ct);
+	if (ct->watch_count > 0) skip_images(ct);
 }
 
 bool ct_has_next(const ChapterText *ct) {
@@ -172,4 +202,13 @@ int ct_progress(const ChapterText *ct) {
 	uint32_t left = ct->stream.stream.out_left;
 	if (left > size) left = size;
 	return (int)(((uint64_t)(size - left) * 1000) / size);
+}
+
+const CtImage *ct_image_at(const ChapterText *ct, uint32_t offset) {
+	if (offset < ct->base) return NULL;
+	uint32_t rel = offset - ct->base;
+	for (int i = 0; i < ct->image_count; i++) {
+		if (ct->images[i].offset == rel) return &ct->images[i];
+	}
+	return NULL;
 }

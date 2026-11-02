@@ -80,6 +80,8 @@ typedef struct {
 static void clear_page(Page *page) {
 	page->line_count = 0;
 	page->at_end = false;
+	page->picture = false;
+	page->picture_offset = 0;
 }
 
 static void push_line(State *s, const uint8_t *glyphs, int len) {
@@ -273,7 +275,26 @@ void layout_page(const uint8_t *buf, size_t len, PageStart start, int cols, int 
 			}
 			break;
 		case REC_IMAGE:
-			break;
+			finish_line(&s);
+			if (page->line_count == 0) {
+				// The picture fills the page. The page after it starts with the next record.
+				page->picture = true;
+				page->picture_offset = (uint32_t)pos;
+				page->next.offset = (uint32_t)(pos + size);
+				page->next.skip = 0;
+				page->next.block = BLOCK_PARAGRAPH;
+				page->next.level = 0;
+				page->next.continuation = false;
+				page->at_end = pos + size >= len;
+				return;
+			}
+			// Text came first: that page ends here and the picture starts the next one.
+			page->next.offset = (uint32_t)pos;
+			page->next.skip = 0;
+			page->next.block = (uint8_t)s.block;
+			page->next.level = (uint8_t)s.level;
+			page->next.continuation = !s.first_line;
+			return;
 		case REC_WORD: {
 			uint8_t glyphs[GLYPHS_MAX];
 			int total = to_glyphs(r + 3, r[2], glyphs);

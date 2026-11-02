@@ -4,7 +4,7 @@
 
 DSLeaf is an EPUB e-reader for the Nintendo DS, written in C with devkitARM and libnds. It is designed to work on a normal dual-screen DS or DS Lite and also on a single-screen Game Boy Macro, including builds that have no touchscreen and no X/Y buttons.
 
-> **Status: early development.** Reading works end to end: the menus, the Library, the reader, bookmarks, the table of contents, Settings and the startup screen. It has been tried in the melonDS emulator and on a DS Lite. Images, and testing on a Game Boy Macro and more flashcarts, are still to come.
+> **Status: early development.** Reading works end to end: the menus, the Library, the reader, bookmarks, the table of contents, Settings and the startup screen. It has been tried in the melonDS emulator and on a DS Lite. Pictures in EPUBs (PNG and baseline JPEG, one page each) were just added and are not timed on a real DS yet. Testing on a Game Boy Macro and more flashcarts, are still to come.
 
 ## Features
 

@@ -18,9 +18,18 @@
 #include <stdint.h>
 
 #include "epub.h"
+#include "imageinfo.h"
 
 #define CT_SOFT_LIMIT (128 * 1024) // a window ends at the first paragraph break after this
 #define CT_SLACK (16 * 1024)       // room for a paragraph that goes on past the limit
+
+// A picture of the current window that gets a page (decision 075).
+#define CT_IMAGES_MAX 32
+typedef struct {
+	uint32_t offset;           // of its REC_IMAGE record, from the start of the window
+	ImageInfo info;
+	char path[EPUB_PATH_MAX];  // inside the zip
+} CtImage;
 
 typedef struct {
 	Epub *book;
@@ -37,6 +46,8 @@ typedef struct {
 	uint32_t base;      // offset of buf[0] within the chapter
 	int window;
 	bool has_words;
+	CtImage images[CT_IMAGES_MAX]; // the pictures of the current window
+	int image_count;
 
 	// Looking for anchors: while a window is read, the offset of each id in
 	// `watch` is noted. See ct_find_anchors.
@@ -62,6 +73,9 @@ bool ct_prev_window(ChapterText *ct); // false if this is the first window
 int ct_find_anchors(Epub *book, int chapter, const char *const *ids, int count, uint32_t *offsets);
 
 // How much of the chapter file has been read so far, 0 to 1000.
+// The picture whose record is at `offset` (counted from the start of the chapter), or NULL.
+const CtImage *ct_image_at(const ChapterText *ct, uint32_t offset);
+
 int ct_progress(const ChapterText *ct);
 
 #endif

@@ -72,3 +72,18 @@ void pix_draw_glyph(uint8_t *fb, const Font *font, bool rotated, int col, int ro
 		}
 	}
 }
+
+void pix_page_origin(const Font *font, bool rotated, int *x, int *y, int *w, int *h, int *row_h) {
+	int cols = pix_cols(font, rotated), rows = pix_rows(font, rotated);
+	int pw = cols * font->width, ph = rows * pitch(font);
+	*w = pw;
+	*h = ph;
+	*row_h = pitch(font);
+	if (!rotated) {
+		*x = (PIX_W - pw) / 2;
+		*y = safe(font) + (avail(font) - ph) / 2;
+	} else {
+		*x = safe(font) + (avail(font) - pw) / 2;
+		*y = (PIX_W - ph) / 2;
+	}
+}

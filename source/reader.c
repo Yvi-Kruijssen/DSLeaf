@@ -427,6 +427,10 @@ void reader_snippet(const Reader *r, int slot, char *out, size_t cap) {
 	if (!r->open || slot < 0 || slot >= r->view_count) return;
 
 	const Page *page = &r->view[slot];
+	if (page->picture) {
+		snprintf(out, cap, "[picture]");
+		return;
+	}
 	bool space = false;
 	for (int l = 0; l < page->line_count && n + 4 < cap; l++) {
 		if (n > 0) space = true; // a new line is a space between words

@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "imageinfo.h"
 #include "textx.h"
 #include "txtstream.h"
 #include "zip.h"
@@ -64,10 +65,18 @@ bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter);
 bool epub_chapter_next(EpubChapter *chapter, TextItem *item);
 void epub_chapter_close(EpubChapter *chapter);
 
-// True if chapter `index` has at least one word of text. Chapters that only
-// hold a picture (cover pages, for example) give false. Cheap: stops at the
+// True if chapter `index` has at least one word of text or one picture that gets a page
+// (imageinfo.h). Chapters with nothing else give false. Cheap: stops at the
 // first word.
 bool epub_chapter_has_text(Epub *book, int index);
+
+// Pictures (decision 075). `src` is the link as written in chapter `chapter`. Finds the
+// picture in the zip, gives its path inside the zip in `path` and its header in `info`.
+// False for a text book, a missing file or a format that is not a picture.
+bool epub_image_info(Epub *book, int chapter, const char *src, char *path, size_t cap, ImageInfo *info);
+
+// Opens a picture found by epub_image_info for reading.
+bool epub_image_open(Epub *book, const char *path, ZipStream *stream);
 
 // Short reason for the error box, at most 24 characters.
 const char *epub_error_text(EpubResult result);

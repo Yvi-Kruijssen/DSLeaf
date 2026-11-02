@@ -4,6 +4,7 @@
 
 #include "logo_bin.h" // generated from data/logo.bin by the build
 #include "pixbuf.h"
+#include "picsink.h"
 #include "popup.h"
 #include "text.h"
 
@@ -35,6 +36,7 @@ static bool logo[2];
 // colours in palette entries 192 up, after the logo's.
 #define BACKDROP_PALETTE_BASE 192
 static bool backdrop[2];
+static bool picture_palette[2]; // the palette holds a picture's colours (decision 075)
 static bool popup_rot[2];     // the picture is drawn turned, like a rotated page (decision 066)
 static const Font *ui_font;   // the font of the text in pictures, the built-in 8x8 font
 
@@ -85,9 +87,14 @@ static const u16 backdrop_colours[THEME_COUNT][BD_COUNT] = {
 	},
 };
 
+static void apply_backdrop(int s) {
+	for (int i = 0; i < BD_COUNT; i++) palette[s][BACKDROP_PALETTE_BASE + i] = backdrop_colours[theme][i];
+}
+
 static void apply_theme(void) {
 	for (int s = 0; s < 2; s++) {
-		for (int i = 0; i < BD_COUNT; i++) palette[s][BACKDROP_PALETTE_BASE + i] = backdrop_colours[theme][i];
+		apply_backdrop(s);
+		picture_palette[s] = false;
 	}
 	const Palette *t = &palettes[theme];
 	for (int s = 0; s < 2; s++) {
@@ -156,6 +163,10 @@ void render_init(void) {
 }
 
 void render_clear(Screen screen) {
+	if (picture_palette[screen]) {
+		picture_palette[screen] = false;
+		apply_backdrop(screen); // the picture's colours were over those of the menus
+	}
 	if (backdrop[screen]) {
 		backdrop[screen] = false; // a cleared screen is plain text again
 		show_layer();
@@ -391,4 +402,50 @@ void render_fade(Screen screen, int level) {
 	if (level < -16) level = -16;
 	if (level > 0) level = 0;
 	setBrightness(screen == SCREEN_TOP ? 1 : 2, level);
+}
+
+// ---- Pictures ----
+
+void render_picture_area(int *x, int *y, int *w, int *h) {
+	int row_h;
+	if (pixel) {
+		pix_page_origin(font, rotated, x, y, w, h, &row_h);
+	} else {
+		row_h = tiles_per_glyph() * 8;
+		*w = render_cols() * 8;
+		*h = render_rows() * row_h;
+		*x = rotated ? safe_rows() * 8 : 0;
+		*y = rotated ? 0 : safe_rows() * 8;
+	}
+	*h -= row_h + 2; // the status row is the last row
+}
+
+void render_picture_begin(Screen screen) {
+	render_clear(screen);
+	uint16_t colours[PIC_PAL_COUNT];
+	picsink_palette(colours);
+	for (int i = 0; i < PIC_PAL_COUNT; i++) palette[screen][PIC_PAL_BASE + i] = colours[i];
+	picture_palette[screen] = true;
+	if (!pixel) {
+		memset(fb[screen], 0, sizeof fb[screen]);
+		backdrop[screen] = true;
+		popup_rot[screen] = rotated;
+		show_layer();
+	}
+	fb_dirty[screen] = true;
+}
+
+void render_picture_row(Screen screen, int x, int y, int w, const uint8_t *idx) {
+	if (!picture_palette[screen]) return;
+	for (int i = 0; i < w; i++) {
+		int sx, sy;
+		if (rotated) {
+			popup_pixel_to_screen(true, x + i, y, &sx, &sy);
+		} else {
+			sx = x + i;
+			sy = y;
+		}
+		if (sx >= 0 && sx < PIX_W && sy >= 0 && sy < PIX_H) fb[screen][sy * PIX_W + sx] = idx[i];
+	}
+	fb_dirty[screen] = true;
 }
