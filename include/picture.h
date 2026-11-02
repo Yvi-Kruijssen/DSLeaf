@@ -12,6 +12,10 @@
 DecResult picture_decode(Epub *book, const CtImage *image, int area_w, int area_h, PicRowFn put_row,
                          PicSizeFn put_size, void *user);
 
+// The last few shrunk pictures are kept (decision 076), so turning back to one does not decode it
+// again. Call this when the book is closed: the cache is keyed by the path inside the zip.
+void picture_cache_clear(void);
+
 // A short message for the page of a picture that could not be shown (at most 24 characters).
 const char *picture_error_text(DecResult result);
 

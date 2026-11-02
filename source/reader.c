@@ -1,4 +1,5 @@
 #include "reader.h"
+#include "picture.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,6 +207,7 @@ EpubResult reader_open(Reader *r, const char *path, int chapter, uint32_t offset
 
 void reader_close(Reader *r) {
 	counter_close();
+	picture_cache_clear();
 	if (r->open) ct_close(&r->text);
 	r->open = false;
 	free(r->chapter_start);
