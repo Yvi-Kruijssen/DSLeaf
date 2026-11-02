@@ -343,18 +343,21 @@ static int chapter_of(void *user, const char *path) {
 
 // Finds the title of a chapter. Returns false if the chapter has no text. `title`
 // is empty when it has text but no heading.
-static bool chapter_title(Epub *book, int chapter, char *title, size_t cap) {
+static bool chapter_title(Epub *book, int chapter, char *title, size_t cap, bool *heading_first) {
 	static EpubChapter stream; // too big for the stack
 	title[0] = '\0';
 	if (!epub_chapter_open(book, chapter, &stream)) return false;
 
 	char raw[TOC_TITLE_MAX * 4];
 	size_t len = 0;
-	bool has_text = false, in_heading = false;
+	bool has_text = false, in_heading = false, seen_block = false;
+	*heading_first = false;
 	TextItem item;
 	for (int n = 0; n < SCAN_ITEMS && epub_chapter_next(&stream, &item); n++) {
 		if (item.kind == TEXT_BLOCK) {
 			if (in_heading) break; // the heading is over
+			if (!seen_block) *heading_first = item.block == BLOCK_HEADING;
+			seen_block = true;
 			if (item.block == BLOCK_HEADING) in_heading = true;
 		} else if (item.kind == TEXT_WORD) {
 			has_text = true;
@@ -378,8 +381,13 @@ static bool toc_from_chapters(Toc *toc, Epub *book) {
 	int sections = 0;
 	for (int i = 0; i < book->chapter_count && toc->count < TOC_ENTRIES_MAX; i++) {
 		char title[TOC_TITLE_MAX];
-		if (!chapter_title(book, i, title, sizeof title)) continue; // a cover, a picture page
-		if (title[0] == '\0') snprintf(title, sizeof title, "Section %d", sections + 1);
+		bool heading_first;
+		if (!chapter_title(book, i, title, sizeof title, &heading_first)) continue; // a cover, a picture page
+		if (book->txt && i == 0 && !heading_first && book->title[0]) { // the start of a text file (a title page, a contents list): the name of the book
+			clean_title(title, sizeof title, book->title);
+		} else if (title[0] == '\0') {
+			snprintf(title, sizeof title, "Section %d", sections + 1);
+		}
 		sections++;
 		if (!push_entry(toc, title, "", i, 0)) break;
 	}

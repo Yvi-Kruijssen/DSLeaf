@@ -1,4 +1,5 @@
-// EPUB loading (docs: formats.md, decisions 023, 036, 037, 039).
+// EPUB loading (docs: formats.md, decisions 023, 036, 037, 039). Plain text books (txtbook.h, decision 074) use
+// the same structure and functions.
 //
 // epub_check is a quick test used before anything else. epub_open reads the
 // book's structure: its title and the chapters in reading order.
@@ -10,6 +11,7 @@
 #include <stdint.h>
 
 #include "textx.h"
+#include "txtstream.h"
 #include "zip.h"
 
 #define EPUB_TITLE_MAX 128
@@ -36,6 +38,7 @@ typedef struct {
 	char (*chapter)[EPUB_PATH_MAX];      // zip paths in reading order, allocated by epub_open
 	uint32_t *chapter_size;              // uncompressed size of each chapter file, in bytes
 	int skipped;                         // spine entries that could not be used
+	struct TxtBook *txt;                 // set for a plain text book (txtbook.h), NULL for an EPUB
 } Epub;
 
 // Quick check that `path` can be read and looks like a zip archive.
@@ -51,6 +54,7 @@ void epub_close(Epub *book);
 typedef struct {
 	ZipStream stream; // must stay the first member
 	TextExtractor text;
+	TxtStream txt;    // used instead of the two above for a plain text book
 } EpubChapter;
 
 // Opens chapter `index` (0 to chapter_count - 1). Returns false if it cannot be read.

@@ -1,5 +1,7 @@
 #include "library.h"
 
+#include "bookname.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,16 +25,15 @@ static int failed_find(const char *name) {
 	return -1;
 }
 
-static bool has_epub_ending(const char *name) {
-	size_t len = strlen(name);
-	return len > 5 && strcasecmp(name + len - 5, ".epub") == 0;
+static bool has_book_ending(const char *name) {
+	return book_ending_length(name) > 0;
 }
 
 static int title_len(const char *name) {
-	return (int)strlen(name) - 5; // only called for names with .epub
+	return (int)strlen(name) - book_ending_length(name); // only called for names that end like a book
 }
 
-// Alphabetical by title, ignoring case. The ".epub" ending is not compared,
+// Alphabetical by title, ignoring case. The ending (.epub or .txt) is not compared,
 // so "A B.epub" sorts before "A.epub" and not after it.
 static int compare_entries(const void *pa, const void *pb) {
 	const char *a = ((const LibraryEntry *)pa)->name;
@@ -54,7 +55,7 @@ typedef struct {
 static bool visit(const char *name, bool is_dir, void *user) {
 	Library *lib = ((ScanState *)user)->lib;
 
-	if (is_dir || name[0] == '.' || !has_epub_ending(name)) return true;
+	if (is_dir || name[0] == '.' || !has_book_ending(name)) return true;
 	if (strlen(name) >= LIBRARY_NAME_MAX || lib->count >= LIBRARY_MAX) {
 		lib->incomplete = true;
 		return true;

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "bookname.h"
 #include "paper.h"
 
 #define TEXT_END_COL 30 // the names stop before the panel edge
@@ -26,7 +27,7 @@ bool library_draw(Library *lib, Screen screen) {
 		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Is the SD card inserted?", STYLE_DIM);
 	} else if (lib->count == 0) {
 		render_puts(screen, 3, LIBRARY_FIRST_ROW, "No EPUB files found", STYLE_DIM);
-		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Put .epub files in /Books", STYLE_DIM);
+		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Put .epub or .txt in /Books", STYLE_DIM);
 	}
 
 	for (int k = 0; k < LIBRARY_ROWS; k++) {
@@ -37,9 +38,9 @@ bool library_draw(Library *lib, Screen screen) {
 		bool selected = i == lib->selected;
 		int y = LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP * k;
 
-		// Show the name without .epub. Leave room for " - error" when it applies.
+		// Show the name without .epub or .txt. Leave room for " - error" when it applies.
 		char name[LIBRARY_NAME_MAX];
-		size_t len = strlen(e->name) - 5;
+		size_t len = strlen(e->name) - (size_t)book_ending_length(e->name);
 		memcpy(name, e->name, len);
 		name[len] = '\0';
 

@@ -7,6 +7,7 @@
 #include <strings.h>
 
 #include "storage.h"
+#include "txtbook.h"
 #include "xml.h"
 
 #define ID_MAX 64   // longest id we can match, including the terminator
@@ -15,6 +16,10 @@
 EpubResult epub_check(const char *path) {
 	FILE *f = storage_fopen(path, "rb");
 	if (!f) return EPUB_ERR_READ;
+	if (txt_is_path(path)) { // a text file only has to be readable
+		fclose(f);
+		return EPUB_OK;
+	}
 
 	unsigned char head[4];
 	size_t n = fread(head, 1, sizeof head, f);
@@ -315,6 +320,7 @@ static const ManifestItem *find_item(const Package *pkg, const char *id) {
 }
 
 EpubResult epub_open(Epub *book, const char *path) {
+	if (txt_is_path(path)) return txt_open(book, path); // a plain text book (decision 074)
 	memset(book, 0, sizeof *book);
 
 	EpubResult check = epub_check(path);
@@ -406,6 +412,10 @@ fail:
 }
 
 void epub_close(Epub *book) {
+	if (book->txt) {
+		txt_close(book);
+		return;
+	}
 	free(book->chapter);
 	free(book->chapter_size);
 	book->chapter = NULL;
@@ -414,6 +424,7 @@ void epub_close(Epub *book) {
 }
 
 bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter) {
+	if (book->txt) return txt_chapter_open(book, index, chapter);
 	memset(chapter, 0, sizeof *chapter);
 	if (index < 0 || index >= book->chapter_count) return false;
 
@@ -427,10 +438,15 @@ bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter) {
 }
 
 bool epub_chapter_next(EpubChapter *chapter, TextItem *item) {
+	if (chapter->txt.dec.file) return txt_chapter_next(chapter, item);
 	return textx_next(&chapter->text, item);
 }
 
 void epub_chapter_close(EpubChapter *chapter) {
+	if (chapter->txt.dec.file) {
+		txt_chapter_close(chapter);
+		return;
+	}
 	zip_stream_close(&chapter->stream);
 }
 

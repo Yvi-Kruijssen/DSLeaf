@@ -1,5 +1,7 @@
 #include "recent.h"
 
+#include "bookname.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -84,7 +86,7 @@ void recent_title_from_path(const char *path, char *buf, size_t cap) {
 	name = name ? name + 1 : path;
 
 	size_t len = strlen(name);
-	if (len > 5 && strcasecmp(name + len - 5, ".epub") == 0) len -= 5;
+	len -= (size_t)book_ending_length(name);
 	if (len >= cap) len = cap - 1;
 	memcpy(buf, name, len);
 	buf[len] = '\0';
