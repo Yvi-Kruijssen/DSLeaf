@@ -50,9 +50,9 @@ static const Palette palettes[THEME_COUNT] = {
 		RGB15(30, 29, 25),
 		{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7), RGB15(14, 22, 8) },
 	},
-	[THEME_DARK] = {
-		RGB15(2, 5, 3),
-		{ RGB15(30, 29, 25), RGB15(15, 18, 14), RGB15(31, 10, 10), RGB15(14, 26, 12), RGB15(20, 26, 11) },
+	[THEME_DARK] = { // black with neutral grey text, the green kept only as the accent (decision 064)
+		RGB15(0, 0, 0),
+		{ RGB15(29, 29, 29), RGB15(15, 15, 15), RGB15(31, 10, 10), RGB15(14, 26, 12), RGB15(20, 26, 11) },
 	},
 	[THEME_SEPIA] = {
 		RGB15(27, 24, 18),
@@ -67,10 +67,10 @@ static const u16 backdrop_colours[THEME_COUNT][BD_COUNT] = {
 		RGB15(31, 31, 30), RGB15(21, 22, 20), RGB15(30, 31, 27), RGB15(3, 6, 4), RGB15(15, 16, 14), RGB15(5, 16, 7),
 		RGB15(19, 20, 18), RGB15(22, 25, 18),
 	},
-	[THEME_DARK] = {
-		RGB15(3, 7, 6), RGB15(2, 5, 3), RGB15(9, 14, 10), RGB15(6, 10, 7), RGB15(20, 26, 11), RGB15(8, 11, 9),
-		RGB15(13, 17, 14), RGB15(4, 6, 5), RGB15(10, 15, 10), RGB15(30, 29, 25), RGB15(13, 16, 12), RGB15(20, 26, 11),
-		RGB15(12, 17, 13), RGB15(18, 22, 15),
+	[THEME_DARK] = { // black and neutral greys (decision 064); only the accent and the focus colour are green
+		RGB15(0, 0, 0), RGB15(2, 2, 2), RGB15(9, 9, 9), RGB15(5, 5, 5), RGB15(20, 26, 11), RGB15(7, 7, 7),
+		RGB15(12, 12, 12), RGB15(1, 1, 1), RGB15(9, 9, 9), RGB15(29, 29, 29), RGB15(12, 12, 12), RGB15(20, 26, 11),
+		RGB15(10, 10, 10), RGB15(18, 18, 18),
 	},
 	[THEME_SEPIA] = {
 		RGB15(3, 7, 6), RGB15(27, 24, 18), RGB15(15, 11, 7), RGB15(23, 20, 14), RGB15(12, 8, 3), RGB15(25, 22, 17),
