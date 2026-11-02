@@ -6,6 +6,34 @@ bool font_is_tile(const Font *font) {
 	return font->width == 8 && (font->height == 8 || font->height == 16);
 }
 
+void font_set_bookmark_glyph(Font *font) {
+	uint8_t *left = font->glyph[FONT_GLYPH_BOOKMARK], *right = font->glyph[FONT_GLYPH_BOOKMARK_2];
+	memset(left, 0, 16);
+	memset(right, 0, 16);
+	int w = font->width, h = font->height;
+	if (w < 3 || h < 4) return;
+
+	// The ribbon is spread over two cells. Its width is odd, so the V cut in its lower edge can end
+	// in a single pixel: the cut is as wide as the ribbon less two legs of two pixels in the last row,
+	// and narrows by one pixel on each side for every row up (a 45 degree V). A tall font leaves a
+	// pixel of space above the ribbon.
+	int rw = 2 * w - 3;
+	int x0 = 1;
+	int top = h >= 12 ? 1 : 0;
+	int bottom = h - 1;
+	for (int y = top; y <= bottom; y++) {
+		int k = bottom - y;                 // rows up from the bottom edge
+		int cut = rw - 4 - 2 * k;           // pixels cut out of the middle: the last is a single pixel
+		for (int x = 0; x < rw; x++) {
+			bool cut_out = cut > 0 && x >= (rw - cut) / 2 && x < (rw - cut) / 2 + cut;
+			if (cut_out) continue;
+			int px = x0 + x; // 0 .. 2w-1 across the pair of cells
+			if (px < w) left[y] |= (uint8_t)(1u << px);
+			else right[y] |= (uint8_t)(1u << (px - w));
+		}
+	}
+}
+
 bool font_from_bytes(Font *font, const uint8_t *data, size_t size) {
 	int width = 8, height;
 	size_t skip = 0;

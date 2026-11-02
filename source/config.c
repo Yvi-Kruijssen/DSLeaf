@@ -16,6 +16,7 @@ void config_set_defaults(Config *c) {
 	c->paragraph_indent = 0;
 	c->margin = 1;           // decision 026
 	c->line_spacing = 1;     // decision 050
+	c->footer = FOOTER_BOTH; // decision 056
 	snprintf(c->font, sizeof c->font, "default");
 }
 
@@ -71,6 +72,11 @@ static void apply(Config *c, const char *key, const char *value) {
 		parse_number(value, CONFIG_INDENT_MAX, &c->paragraph_indent);
 	} else if (strcmp(key, "margin") == 0) {
 		parse_number(value, CONFIG_MARGIN_MAX, &c->margin);
+	} else if (strcmp(key, "footer") == 0) {
+		if (strcmp(value, "both") == 0) c->footer = FOOTER_BOTH;
+		else if (strcmp(value, "page") == 0) c->footer = FOOTER_PAGE;
+		else if (strcmp(value, "percent") == 0) c->footer = FOOTER_PERCENT;
+		else if (strcmp(value, "none") == 0) c->footer = FOOTER_NONE;
 	} else if (strcmp(key, "line_spacing") == 0) {
 		parse_number(value, CONFIG_LINE_MAX, &c->line_spacing);
 	} else if (strcmp(key, "font") == 0) {
@@ -99,10 +105,11 @@ void config_parse(Config *c, const char *text) {
 
 int config_format(const Config *c, char *buf, size_t cap) {
 	int n = snprintf(buf, cap,
-	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\nline_spacing=%d\n",
+	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\nline_spacing=%d\nfooter=%s\n",
 	                 c->display == DISPLAY_SINGLE ? "single" : "dual",
 	                 c->theme == THEME_DARK ? "dark" : c->theme == THEME_SEPIA ? "sepia" : "normal", c->font,
-	                 c->rotate ? 1 : 0, c->paragraph_gap, c->paragraph_indent, c->margin, c->line_spacing);
+	                 c->rotate ? 1 : 0, c->paragraph_gap, c->paragraph_indent, c->margin, c->line_spacing,
+	                 c->footer == FOOTER_PAGE ? "page" : c->footer == FOOTER_PERCENT ? "percent" : c->footer == FOOTER_NONE ? "none" : "both");
 	return (n < 0 || (size_t)n >= cap) ? -1 : n;
 }
 

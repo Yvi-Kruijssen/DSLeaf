@@ -22,6 +22,7 @@ const char *settings_label(Setting s) {
 	case SETTING_GAP:    return "Para spacing";
 	case SETTING_INDENT: return "Indent";
 	case SETTING_MARGIN: return "Margins";
+	case SETTING_FOOTER: return "Progress";
 	case SETTING_PREVIEW: return "Preview page";
 	case SETTING_RESET:  return "Reset all";
 	default:             return "";
@@ -77,6 +78,9 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 	case SETTING_INDENT: plural(out, cap, c->paragraph_indent, "col", "cols"); break;
 	case SETTING_MARGIN: plural(out, cap, c->margin, "col", "cols"); break;
 	case SETTING_LINE:   plural(out, cap, c->line_spacing, "px", "px"); break;
+	case SETTING_FOOTER:
+		snprintf(out, cap, "%s", c->footer == FOOTER_PAGE ? "Page count" : c->footer == FOOTER_PERCENT ? "Percentage" : c->footer == FOOTER_NONE ? "Nothing" : "Both");
+		break;
 	case SETTING_PREVIEW: snprintf(out, cap, "Press A"); break;
 	case SETTING_RESET:  snprintf(out, cap, "%s", m->confirm_reset ? "Sure? Press A" : "Press A"); break;
 	default:             if (cap > 0) out[0] = '\0'; break;
@@ -117,6 +121,10 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		*line1 = "Extra pixels between lines.";
 		*line2 = "Pixel fonts. Next book.";
 		break;
+	case SETTING_FOOTER:
+		*line1 = "Page count and percentage";
+		*line2 = "in the footer. Next book.";
+		break;
 	case SETTING_PREVIEW:
 		*line1 = "Sample page, current settings.";
 		*line2 = "Any key goes back.";
@@ -151,6 +159,7 @@ static void change(SettingsMenu *m, Config *c, Setting s, int delta) {
 	case SETTING_INDENT: c->paragraph_indent = (uint8_t)wrap(c->paragraph_indent, delta, CONFIG_INDENT_MAX + 1); break;
 	case SETTING_MARGIN: c->margin = (uint8_t)wrap(c->margin, delta, CONFIG_MARGIN_MAX + 1); break;
 	case SETTING_LINE:   c->line_spacing = (uint8_t)wrap(c->line_spacing, delta, CONFIG_LINE_MAX + 1); break;
+	case SETTING_FOOTER: c->footer = (FooterInfo)wrap((int)c->footer, delta, FOOTER_COUNT); break;
 	default: break;
 	}
 }

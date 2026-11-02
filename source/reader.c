@@ -28,6 +28,29 @@ void reader_geometry(const Font *font, int margin, bool rotated, int *cols, int 
 
 static Page scratch; // used while counting pages, too big for the stack
 
+// The chapter being counted in the background, between steps (decision 055). It has a buffer of its
+// own, so it does not disturb the pages being read.
+static ChapterText counter;
+static bool counter_open;
+static int counter_chapter;
+static uint32_t counter_sum;
+
+static void counter_close(void) {
+	if (counter_open) ct_close(&counter);
+	counter_open = false;
+}
+
+// The page counts of chapters are only right for the layout they were made with.
+static void forget_pages(Reader *r) {
+	counter_close();
+	if (!r->chapter_pages) return;
+	for (int i = 0; i <= r->book.chapter_count; i++) {
+		if (r->chapter_pages[i] != READER_NO_TEXT) r->chapter_pages[i] = 0; // having no text does not depend on the layout
+	}
+	memset(r->window_pages, 0, sizeof r->window_pages);
+	r->windows_chapter = -1;
+}
+
 // Lays out the whole current window to find where every page starts.
 static void paginate(Reader *r) {
 	PageStart s = layout_first_page();
@@ -38,6 +61,28 @@ static void paginate(Reader *r) {
 		layout_page(r->text.buf, r->text.len, s, r->cols, r->rows, &r->style, &scratch);
 		if (scratch.at_end) break;
 		s = scratch.next;
+	}
+
+	if (!r->chapter_pages) return;
+	// Remember the pages of this window. When the last window of a chapter is reached and all the
+	// windows before it have been seen, the chapter is known whole.
+	if (r->windows_chapter != r->chapter) {
+		memset(r->window_pages, 0, sizeof r->window_pages);
+		r->windows_chapter = r->chapter;
+	}
+	if (r->text.window < READER_WINDOWS_MAX) r->window_pages[r->text.window] = (uint16_t)r->page_count;
+	if (!ct_has_next(&r->text) && r->text.window < READER_WINDOWS_MAX) {
+		uint32_t sum = 0;
+		bool all = true;
+		for (int w = 0; w <= r->text.window; w++) {
+			if (r->window_pages[w] == 0) all = false;
+			sum += r->window_pages[w];
+		}
+		if (all) {
+			uint16_t n = sum >= READER_NO_TEXT ? READER_NO_TEXT - 1 : (uint16_t)sum;
+			if (r->chapter_pages[r->chapter] != n) r->pages_changed = true;
+			r->chapter_pages[r->chapter] = n;
+		}
 	}
 }
 
@@ -86,10 +131,24 @@ static bool load_chapter(Reader *r, int chapter, uint32_t offset) {
 	return true;
 }
 
+// Whether a chapter has text. The answer is kept for the page numbers: a chapter without text counts no pages.
+static bool has_text(Reader *r, int c) {
+	if (r->chapter_pages) {
+		if (r->chapter_pages[c] == READER_NO_TEXT) return false;
+		if (r->chapter_pages[c] != 0) return true;
+	}
+	bool text = epub_chapter_has_text(&r->book, c);
+	if (!text && r->chapter_pages) {
+		r->chapter_pages[c] = READER_NO_TEXT;
+		r->pages_changed = true;
+	}
+	return text;
+}
+
 // The next chapter, in the given direction, that has any text. -1 if none.
 static int find_chapter(Reader *r, int from, int step) {
 	for (int c = from + step; c >= 0 && c < r->book.chapter_count; c += step) {
-		if (epub_chapter_has_text(&r->book, c)) return c;
+		if (has_text(r, c)) return c;
 	}
 	return -1;
 }
@@ -116,16 +175,24 @@ EpubResult reader_open(Reader *r, const char *path, int chapter, uint32_t offset
 		r->total_bytes += r->book.chapter_size[i];
 	}
 	r->chapter_start[r->book.chapter_count] = r->total_bytes;
+	r->windows_chapter = -1;
+	r->chapter_pages = calloc((size_t)r->book.chapter_count + 1, sizeof *r->chapter_pages);
+	if (!r->chapter_pages) {
+		free(r->chapter_start);
+		r->chapter_start = NULL;
+		epub_close(&r->book);
+		return EPUB_ERR_MEMORY;
+	}
 
 	if (chapter < 0 || chapter >= r->book.chapter_count) {
 		chapter = 0;
 		offset = 0;
 	}
 	// A chapter with nothing to read (a cover picture) at the start is not counted.
-	r->first_chapter = epub_chapter_has_text(&r->book, 0) ? 0 : find_chapter(r, 0, 1);
+	r->first_chapter = has_text(r, 0) ? 0 : find_chapter(r, 0, 1);
 	if (r->first_chapter < 0) r->first_chapter = 0;
 	if (offset == 0 && chapter < r->first_chapter) chapter = r->first_chapter;
-	if (offset == 0 && chapter != r->first_chapter && !epub_chapter_has_text(&r->book, chapter)) {
+	if (offset == 0 && chapter != r->first_chapter && !has_text(r, chapter)) {
 		int next = find_chapter(r, chapter, 1);
 		if (next >= 0) chapter = next;
 	}
@@ -137,10 +204,13 @@ EpubResult reader_open(Reader *r, const char *path, int chapter, uint32_t offset
 }
 
 void reader_close(Reader *r) {
+	counter_close();
 	if (r->open) ct_close(&r->text);
 	r->open = false;
 	free(r->chapter_start);
 	r->chapter_start = NULL;
+	free(r->chapter_pages);
+	r->chapter_pages = NULL;
 	if (r->book.chapter) epub_close(&r->book);
 }
 
@@ -198,6 +268,7 @@ void reader_set_style(Reader *r, LayoutStyle style) {
 	if (!r->open) return;
 	uint32_t keep = reader_offset(r);
 	r->style = style;
+	forget_pages(r);
 	paginate(r);
 	uint32_t in_window = keep > r->text.base ? keep - r->text.base : 0;
 	show_page(r, page_for(r, in_window));
@@ -214,6 +285,7 @@ void reader_resize(Reader *r, int cols, int rows, int per_view) {
 	r->cols = cols;
 	r->rows = rows;
 	r->per_view = per_view < 1 ? 1 : (per_view > READER_VIEW_MAX ? READER_VIEW_MAX : per_view);
+	forget_pages(r); // a new page size makes other pages
 	paginate(r);
 	uint32_t in_window = keep > r->text.base ? keep - r->text.base : 0;
 	show_page(r, page_for(r, in_window));
@@ -236,6 +308,75 @@ int reader_percent(const Reader *r) {
 
 int reader_page_number(const Reader *r, int slot) { return r->page + slot + 1; }
 int reader_page_total(const Reader *r) { return r->page_count; }
+
+// Pages per byte of chapter file, as a fraction pages / bytes. It comes from the chapters that are
+// known, mixed with a first guess: in the three test books a page took about one byte of chapter
+// file for each cell of the page (columns times rows), at every page size, so that guess counts as
+// if READER_PRIOR_BYTES of file had been seen. Real chapters outweigh it as they are laid out.
+#define READER_PRIOR_BYTES (128 * 1024)
+
+static void page_density(const Reader *r, uint64_t *pages, uint64_t *bytes) {
+	uint64_t cells = (uint64_t)(r->cols > 0 ? r->cols : 1) * (uint64_t)(r->rows > 0 ? r->rows : 1);
+	uint64_t p = 0, b = 0;
+	for (int i = 0; i < r->book.chapter_count; i++) {
+		if (r->chapter_pages[i] && r->chapter_pages[i] != READER_NO_TEXT) {
+			p += r->chapter_pages[i];
+			b += r->book.chapter_size[i];
+		}
+	}
+	// pages = p + prior / cells and bytes = b + prior, both multiplied by `cells` to stay in integers.
+	*pages = p * cells + READER_PRIOR_BYTES;
+	*bytes = (b + READER_PRIOR_BYTES) * cells;
+}
+
+// The pages before the current chapter and in the whole book.
+static void book_counts(const Reader *r, uint64_t *before, uint64_t *total) {
+	uint64_t p, b;
+	page_density(r, &p, &b);
+	uint64_t known_before = 0, known_total = 0, bytes_before = 0, bytes_total = 0;
+	for (int i = 0; i < r->book.chapter_count; i++) {
+		uint16_t n = r->chapter_pages[i];
+		if (n == READER_NO_TEXT) continue; // no pages at all
+		if (n) {
+			known_total += n;
+			if (i < r->chapter) known_before += n;
+		} else {
+			bytes_total += r->book.chapter_size[i];
+			if (i < r->chapter) bytes_before += r->book.chapter_size[i];
+		}
+	}
+	*before = known_before + (b ? bytes_before * p / b : 0);
+	*total = known_total + (b ? bytes_total * p / b : 0);
+}
+
+// Pages of the chapter in the windows before the current one: exact when they were all seen,
+// otherwise the windows are taken to be as long as this one.
+static uint64_t pages_before_window(const Reader *r) {
+	if (r->windows_chapter != r->chapter) return (uint64_t)r->text.window * (uint64_t)r->page_count;
+	uint64_t sum = 0;
+	for (int w = 0; w < r->text.window; w++) {
+		if (w >= READER_WINDOWS_MAX || r->window_pages[w] == 0) return (uint64_t)r->text.window * (uint64_t)r->page_count;
+		sum += r->window_pages[w];
+	}
+	return sum;
+}
+
+int reader_book_page(const Reader *r, int slot) {
+	if (!r->open || !r->chapter_pages) return 1;
+	uint64_t before, total;
+	book_counts(r, &before, &total);
+	uint64_t in_chapter = pages_before_window(r) + (uint64_t)(r->page + slot + 1);
+	uint64_t n = before + in_chapter;
+	return n > 0x7FFFFFFF ? 0x7FFFFFFF : (int)n;
+}
+
+int reader_book_pages(const Reader *r) {
+	if (!r->open || !r->chapter_pages) return 1;
+	uint64_t before, total;
+	book_counts(r, &before, &total);
+	int here = reader_book_page(r, r->view_count > 0 ? r->view_count - 1 : 0);
+	return total < (uint64_t)here ? here : (total > 0x7FFFFFFF ? 0x7FFFFFFF : (int)total);
+}
 
 // ---- Position, bookmarks and notices ----
 
@@ -352,4 +493,93 @@ void reader_status_fit(const char *left, const char *right, int cols, bool prefe
 		out_left[0] = '\0';
 		copy_cut(out_right, cap, right, cols);
 	}
+}
+
+bool reader_book_pages_exact(const Reader *r) {
+	if (!r->open || !r->chapter_pages) return false;
+	for (int i = 0; i < r->book.chapter_count; i++) {
+		if (r->chapter_pages[i] == 0) return false;
+	}
+	return true;
+}
+
+// ---- Counting the rest of the book ----
+
+// The pages of a window of text, laid out like paginate does.
+static int count_window(const Reader *r, const ChapterText *ct) {
+	PageStart s = layout_first_page();
+	int n = 0;
+	while (n < READER_PAGES_MAX) {
+		n++;
+		layout_page(ct->buf, ct->len, s, r->cols, r->rows, &r->style, &scratch);
+		if (scratch.at_end) break;
+		s = scratch.next;
+	}
+	return n;
+}
+
+// The chapter to count next: the first unknown one before the current chapter, else the first after it.
+static int next_unknown(const Reader *r) {
+	for (int i = 0; i < r->book.chapter_count; i++) {
+		if (r->chapter_pages[i] == 0 && i < r->chapter) return i;
+	}
+	for (int i = r->chapter + 1; i < r->book.chapter_count; i++) {
+		if (r->chapter_pages[i] == 0) return i;
+	}
+	// The current chapter itself when it is a long one that has not been seen whole.
+	return r->chapter_pages[r->chapter] == 0 ? r->chapter : -1;
+}
+
+bool reader_count_step(Reader *r) {
+	if (!r->open || !r->chapter_pages) return false;
+
+	if (!counter_open) {
+		int c = next_unknown(r);
+		if (c < 0) return false;
+		if (!has_text(r, c)) return true; // marked as having no text
+		memset(&counter, 0, sizeof counter);
+		if (!ct_open(&counter, &r->book, c, 0)) {
+			r->chapter_pages[c] = READER_NO_TEXT; // it cannot be read, so it counts no pages (and is not tried again)
+			r->pages_changed = true;
+			return true;
+		}
+		counter_open = true;
+		counter_chapter = c;
+		counter_sum = 0;
+	} else if (!ct_next_window(&counter)) {
+		counter_close(); // it could not go on: start this chapter again next time
+		return true;
+	}
+
+	counter_sum += (uint32_t)count_window(r, &counter);
+	if (!ct_has_next(&counter)) {
+		uint16_t n = counter_sum >= READER_NO_TEXT ? READER_NO_TEXT - 1 : (uint16_t)counter_sum;
+		if (n == 0) n = 1;
+		r->chapter_pages[counter_chapter] = n;
+		r->pages_changed = true;
+		counter_close();
+	}
+	return true;
+}
+
+int reader_export_pages(const Reader *r, uint16_t *out, int cap) {
+	if (!r->open || !r->chapter_pages || cap < r->book.chapter_count) return 0;
+	int known = 0;
+	for (int i = 0; i < r->book.chapter_count; i++) {
+		out[i] = r->chapter_pages[i];
+		known += out[i] != 0;
+	}
+	return known > 0 ? r->book.chapter_count : 0;
+}
+
+int reader_import_pages(Reader *r, const uint16_t *pages, int count) {
+	if (!r->open || !r->chapter_pages || count != r->book.chapter_count) return 0;
+	int taken = 0;
+	for (int i = 0; i < count; i++) {
+		if (r->chapter_pages[i] == 0 && pages[i] != 0) {
+			r->chapter_pages[i] = pages[i];
+			taken++;
+		}
+	}
+	return taken;
 }

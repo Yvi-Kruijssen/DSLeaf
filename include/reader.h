@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "bookmarks.h"
+#include "config.h"
 #include "chaptertext.h"
 #include "epub.h"
 #include "font.h"
@@ -18,6 +19,8 @@
 
 #define READER_PAGES_MAX 1024
 #define READER_VIEW_MAX 2 // pages shown at once: one per screen
+#define READER_WINDOWS_MAX 64   // windows of one chapter whose page counts are kept
+#define READER_NO_TEXT 0xFFFF   // in chapter_pages: a chapter with nothing to read
 
 typedef struct {
 	Epub book;
@@ -40,6 +43,11 @@ typedef struct {
 	char notice[32];                // a short message for the status row, cleared by the next page turn
 
 	uint32_t *chapter_start;        // bytes of chapter files before each chapter, for the percentage
+	uint16_t *chapter_pages;        // pages of each chapter once all its windows were laid out, 0 if not known yet,
+	                                // READER_NO_TEXT for a chapter without text (decision 054)
+	uint16_t window_pages[READER_WINDOWS_MAX]; // pages of the windows of `windows_chapter` seen so far
+	int windows_chapter;
+	bool pages_changed;             // chapter_pages has new entries since the caller last cleared this
 	uint32_t total_bytes;
 } Reader;
 
@@ -118,6 +126,32 @@ int reader_percent(const Reader *r);
 int reader_page_number(const Reader *r, int slot);
 int reader_page_total(const Reader *r);
 
+// Page number in the whole book, starting at 1, for the page in `slot` of the
+// view, and the number of pages in the book (decision 054). A chapter that has
+// been laid out whole counts exactly; chapters not seen yet (and the parts of a
+// long chapter that are not loaded) are estimated from how many pages the
+// chapters seen so far take per byte of their file. So the total settles as more
+// of the book is read, and the number is exact for a book read from the start.
+int reader_book_page(const Reader *r, int slot);
+int reader_book_pages(const Reader *r);
+// True when the number of pages is exact: every chapter has been laid out or is known to have no
+// text. Until then the total is an estimate (shown with a "~").
+bool reader_book_pages_exact(const Reader *r);
+
+// Counting the rest of the book (decision 055). One call does a small piece of work: it lays
+// out one window of a chapter whose pages are not known yet, chapters before the current one
+// first (so the page number becomes exact), then the ones after it. Call it when the user is
+// idle. Returns true if it did something, false when every chapter is known (or the book is
+// not open). The numbers returned by reader_book_page(s) may change afterwards.
+bool reader_count_step(Reader *r);
+
+// The page counts of the chapters for saving (pagecache.h): `out` gets reader_chapter_total-all
+// entries, i.e. one per chapter of the book. Returns how many, or 0 if nothing is known yet.
+int reader_export_pages(const Reader *r, uint16_t *out, int cap);
+
+// Takes saved counts (for the same layout) for the chapters that are not known yet. Returns how many were taken.
+int reader_import_pages(Reader *r, const uint16_t *pages, int count);
+
 // ---- Drawing (reader_view.c, needs the DS) ----
 #include "render.h"
 
@@ -128,6 +162,6 @@ int reader_page_total(const Reader *r);
 // Draws the pages if anything changed. With `dual` the first page goes on the
 // top screen and the second on the bottom one. Otherwise one page is drawn on
 // the bottom screen. Returns true when it drew.
-bool reader_draw(Reader *r, bool dual, const BookMarks *marks);
+bool reader_draw(Reader *r, bool dual, const BookMarks *marks, FooterInfo footer);
 
 #endif

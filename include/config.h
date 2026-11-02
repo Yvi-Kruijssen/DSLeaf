@@ -20,6 +20,14 @@ typedef enum {
 	DISPLAY_SINGLE, // Game Boy Macro: everything on the bottom screen
 } DisplayMode;
 
+typedef enum {
+	FOOTER_BOTH,    // page count and percentage
+	FOOTER_PAGE,    // page count only
+	FOOTER_PERCENT, // percentage only
+	FOOTER_NONE,    // neither
+	FOOTER_COUNT,
+} FooterInfo;
+
 typedef struct {
 	DisplayMode display;
 	Theme theme;
@@ -28,6 +36,7 @@ typedef struct {
 	uint8_t paragraph_indent; // 0 to CONFIG_INDENT_MAX
 	uint8_t margin;           // 0 to CONFIG_MARGIN_MAX
 	uint8_t line_spacing;     // 0 to CONFIG_LINE_MAX, pixel fonts only
+	FooterInfo footer;        // what the reading footer shows (decision 056)
 	char font[CONFIG_FONT_MAX];
 } Config;
 

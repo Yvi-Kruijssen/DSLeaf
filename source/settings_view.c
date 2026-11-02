@@ -8,7 +8,7 @@
 #define FIRST_ROW 4
 #define ROW_STEP 1
 #define VALUE_END 30     // the value ends at this column
-#define HELP_ROW 16
+#define HELP_ROW 17
 #define FOOTER_ROW 23
 
 bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {

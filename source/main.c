@@ -10,6 +10,7 @@
 #include "library.h"
 #include "main_menu.h"
 #include "message_box.h"
+#include "pagecache.h"
 #include "preview.h"
 #include "reader.h"
 #include "recent.h"
@@ -42,6 +43,15 @@ static ListMenu toc_menu;
 static int toc_here;     // the entry the reader is in, or -1
 
 #define SAVE_EVERY_TURNS 10 // how often the position is saved while reading
+
+// Counting the pages of the rest of the book while the reader is idle (decision 055).
+#define COUNT_AFTER_FRAMES 90  // idle frames (1.5 s) before a counting step
+#define COUNT_GAP_FRAMES 45    // idle frames between two steps
+#define SAVE_COUNTS_FRAMES 300 // idle frames (5 s) before new counts are saved
+static int idle_frames;
+static bool counting_done;     // every chapter is known, or counting is not possible
+static uint16_t page_counts[PAGECACHE_CHAPTERS_MAX];
+static void load_page_counts(void);
 static AppScreen current = SCREEN_MAIN_MENU;
 static bool box_visible;
 static bool save_failed;
@@ -101,6 +111,7 @@ static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 static bool open_book(const char *path) {
 	font_load_named(&reading_font, config.font); // falls back to the built-in font
 	reading_font.line_gap = config.line_spacing;  // only pixel fonts use it (decision 050)
+	font_set_bookmark_glyph(&reading_font);        // the icon of the status row (decision 054)
 	int cols, rows;
 	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
 	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent };
@@ -122,6 +133,9 @@ static bool open_book(const char *path) {
 	toc_tried = false;
 	snprintf(book_path, sizeof book_path, "%s", path);
 	book_size = book_id;
+	load_page_counts();
+	idle_frames = 0;
+	counting_done = false;
 	turns_unsaved = 0;
 	bm_open = false;
 	if (resume && (marks.last_chapter > 0 || marks.last_offset > 0)) reader_set_notice(&reader, "Resumed");
@@ -149,8 +163,27 @@ static bool save_position(void) {
 	return ok;
 }
 
+// Loads the saved page counts of the open book, if they are for this page layout.
+static void load_page_counts(void) {
+	int n = reader.book.chapter_count;
+	PageLayout layout = { reader.cols, reader.rows, reader.style.paragraph_gap, reader.style.paragraph_indent };
+	if (n > 0 && n <= PAGECACHE_CHAPTERS_MAX && pagecache_load(book_path, book_size, &layout, page_counts, n)) {
+		reader_import_pages(&reader, page_counts, n);
+	}
+}
+
+// Saves the page counts when there is anything new.
+static void save_page_counts(void) {
+	if (!reader.open || !reader.pages_changed) return;
+	int n = reader.book.chapter_count;
+	if (n > PAGECACHE_CHAPTERS_MAX || reader_export_pages(&reader, page_counts, PAGECACHE_CHAPTERS_MAX) == 0) return;
+	PageLayout layout = { reader.cols, reader.rows, reader.style.paragraph_gap, reader.style.paragraph_indent };
+	if (pagecache_save(book_path, book_size, &layout, page_counts, n)) reader.pages_changed = false;
+}
+
 static void show_main_menu(void) {
 	if (current == SCREEN_READER) {
+		save_page_counts();
 		toc_free(&toc);
 		toc_tried = false;
 		reader_close(&reader);
@@ -429,12 +462,28 @@ int main(void) {
 			update_reader(actions);
 		}
 
+		// While reading and idle, count the pages of the chapters not seen yet, one small step at a time.
+		if (current == SCREEN_READER && !bm_open && !box_visible) {
+			if (actions || tapped) {
+				idle_frames = 0;
+			} else {
+				idle_frames++;
+				if (!counting_done && idle_frames >= COUNT_AFTER_FRAMES) {
+					bool was_exact = reader_book_pages_exact(&reader);
+					counting_done = !reader_count_step(&reader);
+					idle_frames = COUNT_AFTER_FRAMES - COUNT_GAP_FRAMES;
+					if (reader_book_pages_exact(&reader) != was_exact) reader.redraw = true; // "calculating..." becomes the page count
+				}
+				if (idle_frames >= SAVE_COUNTS_FRAMES || (counting_done && reader.pages_changed && idle_frames >= COUNT_AFTER_FRAMES)) save_page_counts();
+			}
+		}
+
 		if (!box_visible) {
 			if (current == SCREEN_MAIN_MENU) main_menu_draw(&menu, SCREEN_BOTTOM);
 			else if (current == SCREEN_LIBRARY) library_draw(&library, SCREEN_BOTTOM);
 			else if (current == SCREEN_SETTINGS) settings_draw(&settings_menu, &config, SCREEN_BOTTOM);
 			else if (current == SCREEN_PREVIEW) { /* drawn once when it opened */ }
-			else if (reader_draw(&reader, dual_screen(), &marks) && bm_open) {
+			else if (reader_draw(&reader, dual_screen(), &marks, config.footer) && bm_open) {
 				if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, marks.count, SCREEN_BOTTOM);
 				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);
 				bm_menu.changed = false;

@@ -21,6 +21,17 @@ typedef struct {
 	uint8_t glyph[FONT_GLYPHS][16];
 } Font;
 
+// The glyph code that the reader's status row uses for the bookmark icon. No text
+// produces it (it is a control character), so it can be redefined freely.
+#define FONT_GLYPH_BOOKMARK 1       // the left half of the icon
+#define FONT_GLYPH_BOOKMARK_2 2     // the right half, drawn in the next cell
+
+// Draws a simple bookmark (a ribbon with a V cut in its lower edge) into the two glyphs
+// FONT_GLYPH_BOOKMARK and FONT_GLYPH_BOOKMARK_2, which are drawn side by side, so it is
+// twice as wide as one cell less a little space (decision 054). Works for any size
+// from 3x4 up to 8x16.
+void font_set_bookmark_glyph(Font *font);
+
 // True for the fonts the tile hardware can draw: 8 wide, and 8 or 16 high.
 bool font_is_tile(const Font *font);
 

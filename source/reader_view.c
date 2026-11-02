@@ -19,64 +19,77 @@ static void draw_page(const Reader *r, const Page *page, Screen screen) {
 	}
 }
 
-// A star in the top right margin of a page that has a bookmark. With no margin
-// there is no room, so the status row gets the star instead (see draw_status).
 static bool page_starred(const Reader *r, int slot, const BookMarks *marks) {
 	return marks && reader_page_marked(r, slot, marks);
 }
 
-static void draw_mark(const Reader *r, int slot, Screen screen, const BookMarks *marks) {
-	int margin = margin_of(r);
-	if (margin > 0 && page_starred(r, slot, marks)) {
-		render_putc(screen, margin + r->cols, 0, '*', STYLE_HIGHLIGHT);
-	}
-}
-
-// Text at the left and right of the status row.
+// The status row (decision 054): the bookmark icon first when the page has a bookmark (a
+// glyph of the reading font), then a text at the left, and a text at the right.
 static void draw_status(const Reader *r, Screen screen, const char *left, const char *right, bool starred) {
 	int row = r->rows; // the row below the text
 	int margin = margin_of(r);
-
-	// With no margin there is no room for the star beside the text, so it goes in front of the left text.
-	char star_left[48];
-	snprintf(star_left, sizeof star_left, "%s%s", starred && margin == 0 ? "*" : "", left ? left : "");
+	int icon = starred ? 3 : 0; // the icon (two cells) and a space
 
 	char l[48], rt[48];
-	reader_status_fit(star_left, right, r->cols, r->notice[0] != '\0', l, rt, sizeof l);
-	if (l[0]) render_puts(screen, margin, row, l, STYLE_DIM);
+	reader_status_fit(left ? left : "", right, r->cols - icon, r->notice[0] != '\0', l, rt, sizeof l);
+	if (starred) {
+		render_putc(screen, margin, row, FONT_GLYPH_BOOKMARK, STYLE_HIGHLIGHT);
+		render_putc(screen, margin + 1, row, FONT_GLYPH_BOOKMARK_2, STYLE_HIGHLIGHT);
+	}
+	if (l[0]) render_puts(screen, margin + icon, row, l, STYLE_DIM);
 	if (rt[0]) render_puts(screen, margin + r->cols - (int)strlen(rt), row, rt, STYLE_DIM);
 }
 
-bool reader_draw(Reader *r, bool dual, const BookMarks *marks) {
+// The text at the right of a status row: the page count and/or the percentage, as chosen in
+// Settings (decision 056). `page` is NULL when the screen has no page to number, `percent` when
+// the percentage is not shown on this screen.
+static void right_text(char *out, size_t cap, FooterInfo info, const char *page, const char *percent) {
+	bool show_page = page && (info == FOOTER_BOTH || info == FOOTER_PAGE);
+	bool show_percent = percent && (info == FOOTER_BOTH || info == FOOTER_PERCENT);
+	snprintf(out, cap, "%s%s%s", show_page ? page : "", show_page && show_percent ? " " : "", show_percent ? percent : "");
+}
+
+bool reader_draw(Reader *r, bool dual, const BookMarks *marks, FooterInfo footer) {
 	if (!r->redraw) return false;
 	r->redraw = false;
 
-	char chapter[24], percent[8], page[24];
-	snprintf(chapter, sizeof chapter, "Ch %d/%d", reader_chapter_number(r), reader_chapter_total(r));
-	const char *left = r->notice[0] ? r->notice : chapter; // a notice replaces the chapter for a moment
+	// Page numbers count the whole book (decision 054). Until every chapter has been counted the
+	// total is not known, and "calculating..." is shown instead of a number that keeps changing (decision 056).
+	char percent[8], page0[24], page1[24], right[40];
+	bool known = reader_book_pages_exact(r);
+	int total = reader_book_pages(r);
+	if (known) {
+		snprintf(page0, sizeof page0, "%d / %d", reader_book_page(r, 0), total);
+		snprintf(page1, sizeof page1, "%d / %d", reader_book_page(r, 1), total);
+	} else {
+		snprintf(page0, sizeof page0, "calculating...");
+		snprintf(page1, sizeof page1, "calculating...");
+	}
 	snprintf(percent, sizeof percent, "%d%%", reader_percent(r));
+	const char *pct = known ? percent : NULL; // hidden while calculating, like the page count (decision 056)
+	const char *notice = r->notice[0] ? r->notice : NULL; // a notice takes the place of the left text for a moment
 
 	if (!dual) {
 		draw_page(r, &r->view[0], SCREEN_BOTTOM);
-		draw_mark(r, 0, SCREEN_BOTTOM, marks);
-		snprintf(page, sizeof page, "p%d/%d %s", reader_page_number(r, 0), reader_page_total(r), percent);
-		draw_status(r, SCREEN_BOTTOM, left, page, page_starred(r, 0, marks));
+		right_text(right, sizeof right, footer, page0, pct);
+		draw_status(r, SCREEN_BOTTOM, notice, right, page_starred(r, 0, marks));
 		return true;
 	}
 
+	// Two screens: each shows the number of its own page, and the percentage is on the bottom one, at the right
+	// like in single-screen mode.
 	draw_page(r, &r->view[0], SCREEN_TOP);
-	draw_mark(r, 0, SCREEN_TOP, marks);
-	snprintf(page, sizeof page, "p%d/%d", reader_page_number(r, 0), reader_page_total(r));
-	draw_status(r, SCREEN_TOP, left, page, page_starred(r, 0, marks));
+	right_text(right, sizeof right, footer, page0, NULL);
+	draw_status(r, SCREEN_TOP, notice, right, page_starred(r, 0, marks));
 
 	render_clear(SCREEN_BOTTOM);
 	if (r->view_count > 1) {
 		draw_page(r, &r->view[1], SCREEN_BOTTOM);
-		draw_mark(r, 1, SCREEN_BOTTOM, marks);
-		snprintf(page, sizeof page, "p%d/%d", reader_page_number(r, 1), reader_page_total(r));
-		draw_status(r, SCREEN_BOTTOM, percent, page, page_starred(r, 1, marks));
+		right_text(right, sizeof right, footer, page1, pct);
+		draw_status(r, SCREEN_BOTTOM, NULL, right, page_starred(r, 1, marks));
 	} else {
-		draw_status(r, SCREEN_BOTTOM, percent, NULL, false); // the last page of an odd number of pages
+		right_text(right, sizeof right, footer, NULL, pct); // the last page of an odd number of pages
+		draw_status(r, SCREEN_BOTTOM, NULL, right, false);
 	}
 	return true;
 }

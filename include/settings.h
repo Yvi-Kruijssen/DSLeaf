@@ -22,6 +22,7 @@ typedef enum {
 	SETTING_GAP,     // blank lines between paragraphs
 	SETTING_INDENT,  // first-line indent
 	SETTING_MARGIN,  // empty columns at each side
+	SETTING_FOOTER,  // page count and/or percentage in the reading footer
 	SETTING_PREVIEW, // shows a sample page (A)
 	SETTING_RESET,   // back to the defaults (asks for a second A)
 	SETTING_COUNT,
