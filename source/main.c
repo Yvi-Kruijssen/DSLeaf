@@ -11,6 +11,7 @@
 #include "main_menu.h"
 #include "message_box.h"
 #include "pagecache.h"
+#include "page_menu.h"
 #include "preview.h"
 #include "reader.h"
 #include "recent.h"
@@ -40,6 +41,7 @@ static ReadingTab menu_tab = TAB_BOOKMARKS; // the tab that was used last
 static Toc toc;          // the table of contents of the open book, read when first needed
 static bool toc_tried;   // reading it has been tried for this book
 static ListMenu toc_menu;
+static PageMenu page_menu;
 static int toc_here;     // the entry the reader is in, or -1
 
 #define SAVE_EVERY_TURNS 10 // how often the position is saved while reading
@@ -283,6 +285,7 @@ static void close_reading_menu(void) {
 
 // Opens the box on a tab. The contents start on the entry the reader is in.
 static void open_reading_menu(ReadingTab tab) {
+	if (tab == TAB_PAGE && !reader_book_pages_exact(&reader)) tab = TAB_BOOKMARKS; // the Page tab needs the counts to be complete
 	menu_tab = tab;
 	int visible = bookmark_menu_visible();
 
@@ -295,6 +298,8 @@ static void open_reading_menu(ReadingTab tab) {
 			toc_here = toc_current(&toc, reader_chapter(&reader), reader_offset(&reader));
 		}
 		list_menu_open(&toc_menu, toc.count, toc_here >= 0 ? toc_here : 0, visible);
+	} else if (tab == TAB_PAGE) {
+		page_menu_open(&page_menu, reader_book_page(&reader, 0), reader_book_pages(&reader));
 	} else {
 		bookmark_menu_open(&bm_menu, &marks, reader_chapter(&reader), reader_offset(&reader), visible);
 	}
@@ -314,10 +319,21 @@ static void go_to_entry(int index) {
 // The box is open: its keys are the menu ones (decision 033). L and R switch tabs.
 static void update_bookmark_menu(uint32_t actions) {
 	if (actions & (ACT_TAB_NEXT | ACT_TAB_PREV)) {
-		open_reading_menu(menu_tab == TAB_CONTENTS ? TAB_BOOKMARKS : TAB_CONTENTS);
+		open_reading_menu(reading_tab_step(menu_tab, (actions & ACT_TAB_NEXT) ? 1 : -1, reader_book_pages_exact(&reader)));
 		return;
 	}
 	int visible = bookmark_menu_visible();
+
+	if (menu_tab == TAB_PAGE) {
+		PageEvent e = page_menu_update(&page_menu, actions);
+		if (e == PAGE_EVENT_GO) {
+			reader_goto_book_page(&reader, page_menu.value);
+			save_position();
+		}
+		if (e == PAGE_EVENT_GO || e == PAGE_EVENT_CLOSE) close_reading_menu();
+		else if (page_menu.changed) reader.redraw = true;
+		return;
+	}
 
 	if (menu_tab == TAB_CONTENTS) {
 		BmEvent e = list_menu_update(&toc_menu, toc.count, actions, visible, false);
@@ -484,9 +500,12 @@ int main(void) {
 			else if (current == SCREEN_SETTINGS) settings_draw(&settings_menu, &config, SCREEN_BOTTOM);
 			else if (current == SCREEN_PREVIEW) { /* drawn once when it opened */ }
 			else if (reader_draw(&reader, dual_screen(), &marks, config.footer) && bm_open) {
-				if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, marks.count, SCREEN_BOTTOM);
-				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, SCREEN_BOTTOM);
+				bool with_page = reader_book_pages_exact(&reader);
+				if (menu_tab == TAB_PAGE) page_menu_draw(&page_menu, reader_book_page(&reader, 0), marks.count, SCREEN_BOTTOM);
+				else if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, marks.count, with_page, SCREEN_BOTTOM);
+				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, with_page, SCREEN_BOTTOM);
 				bm_menu.changed = false;
+				page_menu.changed = false;
 				toc_menu.changed = false;
 			}
 		}

@@ -30,7 +30,7 @@ typedef struct {
 	int col, row, width, height, text_col, text_end;
 } Box;
 
-static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown) {
+static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown, bool with_page) {
 	Box b;
 	b.width = render_cols() - 2;
 	if (b.width > BOX_MAX_COLS) b.width = BOX_MAX_COLS;
@@ -49,12 +49,14 @@ static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown
 	int inner = b.text_end - b.text_col;
 	char marks[24];
 	snprintf(marks, sizeof marks, "Bookmarks %d/%d", bookmark_count, BOOKMARKS_MAX);
-	if (reading_menu_full_header(inner)) {
+	if (reading_menu_full_header(inner, with_page)) {
 		int next = render_puts(screen, b.text_col, b.row + 1, "Contents", tab == TAB_CONTENTS ? STYLE_HIGHLIGHT : STYLE_DIM);
-		render_puts_utf8_clip(screen, next + 1, b.row + 1, marks, tab == TAB_BOOKMARKS ? STYLE_HIGHLIGHT : STYLE_DIM, b.text_end);
+		next = render_puts_utf8_clip(screen, next + 1, b.row + 1, marks, tab == TAB_BOOKMARKS ? STYLE_HIGHLIGHT : STYLE_DIM, b.text_end);
+		if (with_page) render_puts_utf8_clip(screen, next + 1, b.row + 1, "Page", tab == TAB_PAGE ? STYLE_HIGHLIGHT : STYLE_DIM, b.text_end);
 	} else {
 		char one[32];
-		if (tab == TAB_CONTENTS) snprintf(one, sizeof one, "<Contents>");
+		if (tab == TAB_PAGE) snprintf(one, sizeof one, "<Page>");
+		else if (tab == TAB_CONTENTS) snprintf(one, sizeof one, "<Contents>");
 		else if ((int)strlen(marks) + 2 <= inner) snprintf(one, sizeof one, "<%s>", marks);
 		else snprintf(one, sizeof one, "<Bookmarks>");
 		render_puts_utf8_clip(screen, b.text_col, b.row + 1, one, STYLE_HIGHLIGHT, b.text_end);
@@ -64,10 +66,10 @@ static Box draw_box(Screen screen, ReadingTab tab, int bookmark_count, int shown
 	return b;
 }
 
-void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first_chapter, Screen screen) {
+void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first_chapter, bool with_page, Screen screen) {
 	int visible = bookmark_menu_visible();
 	int shown = marks->count == 0 ? 2 : (marks->count < visible ? marks->count : visible);
-	Box b = draw_box(screen, TAB_BOOKMARKS, marks->count, shown);
+	Box b = draw_box(screen, TAB_BOOKMARKS, marks->count, shown, with_page);
 
 	if (marks->count == 0) {
 		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No bookmarks yet.", STYLE_NORMAL, b.text_end);
@@ -90,11 +92,11 @@ void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first
 	}
 }
 
-void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_count, Screen screen) {
+void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_count, bool with_page, Screen screen) {
 	int visible = bookmark_menu_visible();
 	int count = toc ? toc->count : 0;
 	int shown = count == 0 ? 2 : (count < visible ? count : visible);
-	Box b = draw_box(screen, TAB_CONTENTS, bookmark_count, shown);
+	Box b = draw_box(screen, TAB_CONTENTS, bookmark_count, shown, with_page);
 
 	if (count == 0) {
 		render_puts_utf8_clip(screen, b.text_col, b.row + 2, "No contents found", STYLE_NORMAL, b.text_end);
@@ -115,4 +117,22 @@ void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_cou
 		int indent = e->level > 2 ? 2 : e->level; // two columns for each level, at most two levels deep
 		render_puts_utf8_clip(screen, b.text_col + indent * 2, row, e->title, style, b.text_end);
 	}
+}
+
+void page_menu_draw(const PageMenu *m, int current, int bookmark_count, Screen screen) {
+	Box b = draw_box(screen, TAB_PAGE, bookmark_count, 3, true);
+
+	// The number with its digits, the digit being changed highlighted, and the total after it.
+	char total[16];
+	snprintf(total, sizeof total, " / %d", m->total);
+	int col = b.text_col;
+	for (int i = 0; i < m->digits; i++) {
+		render_putc(screen, col + i, b.row + 2, (uint8_t)('0' + page_menu_digit(m, i)), i == m->cursor ? STYLE_HIGHLIGHT : STYLE_NORMAL);
+	}
+	render_puts_utf8_clip(screen, col + m->digits, b.row + 2, total, STYLE_DIM, b.text_end);
+	render_putc(screen, col + m->cursor, b.row + 3, '^', STYLE_HIGHLIGHT); // under the digit being changed
+
+	char now[32];
+	snprintf(now, sizeof now, "Now on page %d", current);
+	render_puts_utf8_clip(screen, b.text_col, b.row + 4, now, STYLE_DIM, b.text_end);
 }

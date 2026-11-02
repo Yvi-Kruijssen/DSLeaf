@@ -145,6 +145,11 @@ bool reader_book_pages_exact(const Reader *r);
 // not open). The numbers returned by reader_book_page(s) may change afterwards.
 bool reader_count_step(Reader *r);
 
+// Goes to page `page` of the whole book (clamped to 1 .. total). Only works when the page
+// counts are exact (reader_book_pages_exact), otherwise it returns false and does nothing.
+// In a view of two pages the page may be the second one of the view (decision 057).
+bool reader_goto_book_page(Reader *r, int page);
+
 // The page counts of the chapters for saving (pagecache.h): `out` gets reader_chapter_total-all
 // entries, i.e. one per chapter of the book. Returns how many, or 0 if nothing is known yet.
 int reader_export_pages(const Reader *r, uint16_t *out, int cap);

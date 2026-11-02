@@ -16,7 +16,7 @@ DSLeaf is an EPUB e-reader for the Nintendo DS, written in C with devkitARM and 
 - **One page per screen**: two pages at once in dual-screen mode, one page in single-screen mode.
 - **Rotated reading mode** for holding the device sideways like a book.
 - **Bitmap fonts**: the built-in 8x8 font is [font8x8](https://github.com/dhepper/font8x8) (public domain). Extra fonts up to 8x16 (such as 6x12) can be put in a `Fonts` folder on the SD card, with a converter script in `tools/`.
-- **Table of contents** (EPUB 2 and 3) and **bookmarks** (20 per book), in one menu with two tabs to jump around the book. Books without a table of contents get one made from their chapters. A book reopens where you left it. Everything is saved as text files on the SD card, and three colour themes (normal, dark and sepia) are remembered.
+- **Table of contents** (EPUB 2 and 3) and **bookmarks** (20 per book), in one menu with tabs to jump around the book, including a jump to a page number once the pages of the book have been counted. Books without a table of contents get one made from their chapters. A book reopens where you left it. Everything is saved as text files on the SD card, and three colour themes (normal, dark and sepia) are remembered.
 - **A startup screen** with the DSLeaf logo.
 - **Buttons only is always enough.** Touch is optional, and the X and Y buttons are never required.
 
@@ -31,7 +31,7 @@ DSLeaf is an EPUB e-reader for the Nintendo DS, written in C with devkitARM and 
 | Reading | D-pad Right/Down, R | Next page |
 | Reading | D-pad Left/Up, L | Previous page |
 | Reading | A | Toggle bookmark |
-| Reading | Select | Contents and bookmarks box (L/R switch tabs) |
+| Reading | Select | Contents, bookmarks and go-to-page box (L/R switch tabs) |
 | Reading | B | Switch colour theme |
 | Reading | Start | Back to the main menu |
 

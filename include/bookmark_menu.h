@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #include "bookmarks.h"
+#include "page_menu.h"
 #include "render.h"
 #include "toc.h"
 
@@ -23,14 +24,18 @@ typedef struct {
 
 typedef ListMenu BookmarkMenu;
 
-// The two tabs of the box, switched with L and R (decision 048).
-typedef enum { TAB_CONTENTS, TAB_BOOKMARKS } ReadingTab;
+// The tabs of the box, switched with L and R (decision 048). The Page tab only exists when
+// the page counts are complete (decision 057).
+typedef enum { TAB_CONTENTS, TAB_BOOKMARKS, TAB_PAGE } ReadingTab;
+
+// The tab before or after `tab` (`step` is 1 or -1), skipping the Page tab when `with_page` is false.
+ReadingTab reading_tab_step(ReadingTab tab, int step, bool with_page);
 
 // The box is narrower when the page is rotated (decision 049). These say what
 // fits in a text area `width` characters wide: whether both tab names fit in the
 // title row (otherwise only the one in use is shown, as "<Contents>"), and the
 // longest key hint that fits.
-bool reading_menu_full_header(int width);
+bool reading_menu_full_header(int width, bool with_page);
 const char *reading_menu_hint(ReadingTab tab, int width);
 
 typedef enum {
@@ -74,10 +79,13 @@ int bookmark_menu_visible(void);
 
 // Draws the bookmarks tab, centred on the screen. `first_chapter` is the book's
 // first chapter with text, so the chapter numbers match the status row.
-void bookmark_menu_draw(const BookmarkMenu *menu, const BookMarks *marks, int first_chapter, Screen screen);
+void bookmark_menu_draw(const BookmarkMenu *menu, const BookMarks *marks, int first_chapter, bool with_page, Screen screen);
 
 // Draws the table of contents tab. `toc` may be NULL or empty for a book
 // without one. `here` is the entry the reader is in, marked with a star.
-void toc_menu_draw(const ListMenu *menu, const Toc *toc, int here, int bookmark_count, Screen screen);
+void toc_menu_draw(const ListMenu *menu, const Toc *toc, int here, int bookmark_count, bool with_page, Screen screen);
+
+// Draws the Page tab: the number being entered, the cursor under its digit and the page the reader is on.
+void page_menu_draw(const PageMenu *menu, int current, int bookmark_count, Screen screen);
 
 #endif

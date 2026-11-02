@@ -562,6 +562,40 @@ bool reader_count_step(Reader *r) {
 	return true;
 }
 
+bool reader_goto_book_page(Reader *r, int page) {
+	if (!r->open || !reader_book_pages_exact(r)) return false;
+
+	uint64_t total = 0;
+	for (int i = 0; i < r->book.chapter_count; i++) total += r->chapter_pages[i] == READER_NO_TEXT ? 0 : r->chapter_pages[i];
+	if (total == 0) return false;
+	if (page < 1) page = 1;
+	if ((uint64_t)page > total) page = (int)total;
+
+	// The chapter that holds the page, and the page's place in it.
+	uint64_t before = 0;
+	int chapter = -1;
+	for (int i = 0; i < r->book.chapter_count; i++) {
+		if (r->chapter_pages[i] == READER_NO_TEXT) continue;
+		if ((uint64_t)(page - 1) < before + r->chapter_pages[i]) {
+			chapter = i;
+			break;
+		}
+		before += r->chapter_pages[i];
+	}
+	if (chapter < 0) return false;
+	int k = (int)((uint64_t)(page - 1) - before);
+
+	if (!load_chapter(r, chapter, 0)) return false;
+	// A long chapter is several windows: skip the ones before the page.
+	while (k >= r->page_count && ct_has_next(&r->text)) {
+		k -= r->page_count;
+		ct_next_window(&r->text);
+		paginate(r);
+	}
+	show_page(r, k < r->page_count ? k : r->page_count - 1);
+	return true;
+}
+
 int reader_export_pages(const Reader *r, uint16_t *out, int cap) {
 	if (!r->open || !r->chapter_pages || cap < r->book.chapter_count) return 0;
 	int known = 0;
