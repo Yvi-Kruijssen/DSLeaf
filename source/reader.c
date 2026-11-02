@@ -575,6 +575,43 @@ bool reader_count_step(Reader *r) {
 	return true;
 }
 
+int reader_page_of(Reader *r, int chapter, uint32_t offset) {
+	if (!r->open || !reader_book_pages_exact(r) || chapter < 0 || chapter >= r->book.chapter_count) return 0;
+	uint32_t before = 0;
+	for (int i = 0; i < chapter; i++) before += r->chapter_pages[i] == READER_NO_TEXT ? 0 : r->chapter_pages[i];
+	if (r->chapter_pages[chapter] == READER_NO_TEXT) return 0;
+
+	ChapterText *tmp = malloc(sizeof *tmp);
+	if (!tmp) return 0;
+	memset(tmp, 0, sizeof *tmp);
+	if (!ct_open(tmp, &r->book, chapter, 0)) {
+		free(tmp);
+		return 0;
+	}
+	int result = 0;
+	for (;;) {
+		// Is the offset in this window? (The last window takes everything that is left.)
+		if (offset < tmp->base + tmp->len || !ct_has_next(tmp)) {
+			uint32_t rel = offset > tmp->base ? offset - tmp->base : 0;
+			PageStart s = layout_first_page();
+			int k = 0;
+			for (;;) {
+				layout_page(tmp->buf, tmp->len, s, r->cols, r->rows, &r->style, &scratch);
+				if (scratch.at_end || scratch.next.offset > rel || k + 1 >= READER_PAGES_MAX) break;
+				s = scratch.next;
+				k++;
+			}
+			result = (int)before + k + 1;
+			break;
+		}
+		before += (uint32_t)count_window(r, tmp);
+		if (!ct_next_window(tmp)) break;
+	}
+	ct_close(tmp);
+	free(tmp);
+	return result;
+}
+
 bool reader_goto_book_page(Reader *r, int page) {
 	if (!r->open || !reader_book_pages_exact(r)) return false;
 

@@ -108,6 +108,12 @@ static void show_error(const char *path, EpubResult result) {
 	box_visible = true;
 }
 
+// The page of each bookmark in the Bookmarks tab (decision 081), kept for the book.
+typedef struct { int chapter; uint32_t offset; int page; } MarkPage;
+static MarkPage mark_cache[BOOKMARKS_MAX];
+static int mark_cache_count, mark_cache_next;
+static int bm_pages[BOOKMARKS_MAX]; // for the marks as listed, 0 when not known
+
 static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 
 // Opens a book and starts reading it. Returns true if it worked. On failure an
@@ -136,6 +142,7 @@ static bool open_book(const char *path) {
 	}
 	toc_free(&toc);
 	toc_tried = false;
+	mark_cache_count = mark_cache_next = 0; // other layout, other book
 	snprintf(book_path, sizeof book_path, "%s", path);
 	book_size = book_id;
 	load_page_counts();
@@ -294,6 +301,27 @@ static void close_reading_menu(void) {
 	reader.redraw = true;
 }
 
+// The page of each bookmark, shown in the Bookmarks tab (decision 081). Worked out when the tab opens, and kept
+// for the book: a page takes a pass over its chapter, which is slow on a DS.
+
+static void fill_mark_pages(void) {
+	bool exact = reader_book_pages_exact(&reader);
+	for (int i = 0; i < marks.count; i++) {
+		const Mark *k = &marks.mark[i];
+		bm_pages[i] = 0;
+		if (!exact) continue;
+		for (int c = 0; c < mark_cache_count; c++) {
+			if (mark_cache[c].chapter == (int)k->chapter && mark_cache[c].offset == k->offset) bm_pages[i] = mark_cache[c].page;
+		}
+		if (bm_pages[i] > 0) continue;
+		bm_pages[i] = reader_page_of(&reader, k->chapter, k->offset);
+		if (bm_pages[i] > 0) {
+			MarkPage *slot = &mark_cache[mark_cache_count < BOOKMARKS_MAX ? mark_cache_count++ : mark_cache_next++ % BOOKMARKS_MAX];
+			*slot = (MarkPage){ (int)k->chapter, k->offset, bm_pages[i] };
+		}
+	}
+}
+
 // Opens the box on a tab. The contents start on the entry the reader is in.
 static void open_reading_menu(ReadingTab tab) {
 	if (tab == TAB_PAGE && !reader_book_pages_exact(&reader)) tab = TAB_BOOKMARKS; // the Page tab needs the counts to be complete
@@ -312,6 +340,7 @@ static void open_reading_menu(ReadingTab tab) {
 	} else if (tab == TAB_PAGE) {
 		page_menu_open(&page_menu, reader_book_page(&reader, 0), reader_book_pages(&reader));
 	} else {
+		fill_mark_pages();
 		bookmark_menu_open(&bm_menu, &marks, reader_chapter(&reader), reader_offset(&reader), visible);
 	}
 	bm_open = true;
@@ -413,6 +442,7 @@ static void update_bookmark_menu(uint32_t actions, bool tapped, int tap_x, int t
 		break;
 	case BM_EVENT_DELETE:
 		marks_remove_at(&marks, e.index);
+		for (int i = e.index; i < marks.count; i++) bm_pages[i] = bm_pages[i + 1];
 		save_position();
 		bookmark_menu_clamp(&bm_menu, &marks, visible);
 		break;
@@ -571,7 +601,7 @@ int main(void) {
 				bool with_page = reader_book_pages_exact(&reader);
 				if (menu_tab == TAB_PAGE) page_menu_draw(&page_menu, reader_book_page(&reader, 0), marks.count, SCREEN_BOTTOM);
 				else if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, marks.count, with_page, SCREEN_BOTTOM);
-				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, with_page, SCREEN_BOTTOM);
+				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, bm_pages, with_page, SCREEN_BOTTOM);
 				bm_menu.changed = false;
 				page_menu.changed = false;
 				toc_menu.changed = false;

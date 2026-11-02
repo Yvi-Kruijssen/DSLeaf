@@ -12,7 +12,7 @@
 
 #include "bookmark_menu.h"
 
-#define POPUP_HEADER_H 18   // the tab bar (it was 22 pixels, decision 072)
+#define POPUP_HEADER_H 16   // the tab bar (it was 22 pixels, then 18; decisions 072 and 083)
 #define POPUP_ROW_H 16      // one row of a list
 #define POPUP_FOOTER_H 24   // the key hints on one line (a rotated pop-up is narrower and has two lines: 36)
 #define POPUP_FOOTER2_H 36

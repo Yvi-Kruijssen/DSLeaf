@@ -75,7 +75,7 @@ int bookmark_menu_visible(void);
 
 // Draws the bookmarks tab, centred on the screen. `first_chapter` is the book's
 // first chapter with text, so the chapter numbers match the status row.
-void bookmark_menu_draw(const BookmarkMenu *menu, const BookMarks *marks, int first_chapter, bool with_page, Screen screen);
+void bookmark_menu_draw(const BookmarkMenu *menu, const BookMarks *marks, int first_chapter, const int *pages, bool with_page, Screen screen);
 
 // Draws the table of contents tab. `toc` may be NULL or empty for a book
 // without one. `here` is the entry the reader is in, marked with a star.

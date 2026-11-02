@@ -95,11 +95,11 @@ static void shoulder_button(Screen screen, const PopupRect *r, bool left, const 
 	shoulder_shape(screen, r, left, true, BD_BTN);
 	render_backdrop_rect(screen, r->x + (left ? 6 : 2), r->y + 1, r->w - 8, 1, BD_BTN_LIGHT);
 	render_backdrop_rect(screen, r->x + 2, r->y + r->h - 3, r->w - 4, 1, BD_BTN_SHADE);
-	render_backdrop_text(screen, r->x + (r->w - 8) / 2, r->y + (r->h - 8) / 2 - 1, letter, BD_BTN_TEXT);
+	render_backdrop_text(screen, r->x + (r->w - 8) / 2, r->y + (r->h - 8) / 2, letter, BD_BTN_TEXT);
 }
 
 // The tab bar: the top strip of the panel, over its whole width. The L and R buttons are its two top corners and the tabs
-// are between them. The tab in use reaches up to the top edge and is joined to the panel below it, with a green bar on top;
+// are between them. The tab in use reaches up to the top edge and is joined to the panel below it, in the green ink;
 // the others are dim text on the strip.
 static void tab_bar(Screen screen, const PopupGeometry *g, int tabs, ReadingTab active) {
 	render_backdrop_rect(screen, g->x + 1, g->y + 1, g->w - 2, POPUP_HEADER_H - 1, BD_RULE);
@@ -116,13 +116,12 @@ static void tab_bar(Screen screen, const PopupGeometry *g, int tabs, ReadingTab 
 	for (int i = 0; i < tabs; i++) {
 		const PopupTabBox *t = &boxes[i];
 		BackdropColour ink = t->active ? BD_ACCENT : BD_BTN_DIM;
-		int text_y = t->box.y + (t->active ? 5 : 6);
+		int text_y = t->box.y + (t->active ? 4 : 5);
 		if (t->active) {
 			int bottom = g->y + POPUP_HEADER_H;                                    // down to the line under the strip, joined to the panel
 			render_backdrop_rect(screen, t->box.x, t->box.y, 1, bottom - t->box.y, BD_EDGE);
 			render_backdrop_rect(screen, t->box.x + t->box.w - 1, t->box.y, 1, bottom - t->box.y, BD_EDGE);
 			render_backdrop_rect(screen, t->box.x + 1, t->box.y, t->box.w - 2, bottom - t->box.y + 1, BD_PANEL);
-			render_backdrop_rect(screen, t->box.x + 1, t->box.y, t->box.w - 2, 2, BD_ACCENT);
 		}
 		// The icon, and the name when there is one, centred in the tab.
 		int name_w = t->name ? (int)strlen(t->name) * 8 + 3 : 0;
@@ -193,7 +192,7 @@ static void position_text(char *out, size_t cap, int selected, int count) {
 	else out[0] = '\0';
 }
 
-void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first_chapter, bool with_page, Screen screen) {
+void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first_chapter, const int *pages, bool with_page, Screen screen) {
 	char pos[24];
 	position_text(pos, sizeof pos, m->selected, marks->count);
 	PopupGeometry g = draw_frame(screen, TAB_BOOKMARKS, with_page, pos);
@@ -207,8 +206,13 @@ void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first
 		if (index >= marks->count) break;
 		const Mark *k = &marks->mark[index];
 		char line[BOOKMARKS_PATH_MAX];
-		int chapter = (int)k->chapter - first_chapter + 1;
-		snprintf(line, sizeof line, "Ch %d %s", chapter < 1 ? 1 : chapter, k->text[0] ? k->text : "(no text)");
+		const char *text = k->text[0] ? k->text : "(no text)";
+		if (pages && pages[index] > 0) {
+			snprintf(line, sizeof line, "Page %d %s", pages[index], text); // the page in the book (decision 081)
+		} else {
+			int chapter = (int)k->chapter - first_chapter + 1; // the pages are not counted yet
+			snprintf(line, sizeof line, "Ch %d %s", chapter < 1 ? 1 : chapter, text);
+		}
 		row(screen, &g, i, index == m->selected, false, 0, line);
 	}
 	scrollbar(screen, &g, marks->count, m->top, g.rows);

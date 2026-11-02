@@ -150,6 +150,11 @@ bool reader_book_pages_exact(const Reader *r);
 // not open). The numbers returned by reader_book_page(s) may change afterwards.
 bool reader_count_step(Reader *r);
 
+// The page of the whole book that holds the text at `offset` of `chapter` (the numbers of reader_book_page),
+// for a bookmark. 0 when it cannot be known: the counts of the book are not exact yet, or the chapter cannot be
+// read. Lays out the chapter up to the offset, so it takes about as long as counting that chapter (decision 081).
+int reader_page_of(Reader *r, int chapter, uint32_t offset);
+
 // Goes to page `page` of the whole book (clamped to 1 .. total). Only works when the page
 // counts are exact (reader_book_pages_exact), otherwise it returns false and does nothing.
 // In a view of two pages the page may be the second one of the view (decision 057).
