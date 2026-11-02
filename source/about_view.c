@@ -25,6 +25,15 @@ bool about_draw(About *a, Screen screen) {
 		about_line(a, a->top + i, text, &heading);
 		render_puts(screen, TEXT_COL, FIRST_ROW + i, text, heading ? STYLE_ACCENT : STYLE_NORMAL);
 	}
+	// The scrollbar at the right of the text, like the lists of the reading menu.
+	if (a->count > ABOUT_ROWS) {
+		int x = 242, y = FIRST_ROW * 8, h = ABOUT_ROWS * 8;
+		render_backdrop_rect(screen, x, y, 3, h, BD_RULE);
+		int thumb = h * ABOUT_ROWS / a->count;
+		if (thumb < 8) thumb = 8;
+		int at = (h - thumb) * a->top / (a->count - ABOUT_ROWS);
+		render_backdrop_rect(screen, x, y + at, 3, thumb, BD_ACCENT);
+	}
 	char page[16];
 	snprintf(page, sizeof page, "%d/%d", about_page(a), about_pages(a));
 	render_puts(screen, 30 - (int)strlen(page), FIRST_ROW + ABOUT_ROWS, page, STYLE_DIM);

@@ -422,7 +422,8 @@ static void update_bookmark_menu(uint32_t actions, bool tapped, int tap_x, int t
 	if (bm_open && bm_menu.changed) reader.redraw = true;
 }
 
-static void update_settings(uint32_t actions) {
+static void update_settings(uint32_t actions, bool tapped, int x, int y) {
+	if (tapped) actions |= settings_touch(&settings_menu, &config, x, y);
 	SettingsEvent e = settings_update(&settings_menu, &config, actions);
 
 	if (e.kind == SETTINGS_EVENT_CHANGED) {
@@ -531,8 +532,9 @@ int main(void) {
 		} else if (current == SCREEN_LIBRARY) {
 			update_library(actions, tapped, x, y);
 		} else if (current == SCREEN_SETTINGS) {
-			update_settings(actions);
+			update_settings(actions, tapped, x, y);
 		} else if (current == SCREEN_ABOUT) {
+			if (tapped) actions |= about_touch(x, y);
 			if (about_update(&about, actions)) {
 				settings_menu.redraw = true;
 				current = SCREEN_SETTINGS;

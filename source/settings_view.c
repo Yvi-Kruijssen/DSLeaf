@@ -10,15 +10,15 @@
 #include "render.h"
 #include "settings.h"
 
-#define FIRST_ROW 5
-#define VALUE_END 29     // the value ends at this column (x 239, inside the panel)
+#define FIRST_ROW SETTINGS_FIRST_ROW
+#define VALUE_END SETTINGS_VALUE_END // the value ends at this column (x 239, inside the panel)
 #define PANEL_H 149      // the panel is y 15 to 163
-#define BUTTON_W 70      // three buttons side by side
-#define BUTTON_H 16
-#define BUTTON_Y 124
-#define PREVIEW_X 16
-#define RESET_X 93
-#define ABOUT_X 170
+#define BUTTON_W SETTINGS_BUTTON_W // three buttons side by side
+#define BUTTON_H SETTINGS_BUTTON_H
+#define BUTTON_Y SETTINGS_BUTTON_Y
+#define PREVIEW_X SETTINGS_BUTTON_X0
+#define RESET_X SETTINGS_BUTTON_X1
+#define ABOUT_X SETTINGS_BUTTON_X2
 #define HELP_RULE_Y 143
 #define HELP_ROW 18      // two lines: the help, then the second help line (or the size or a note)
 #define HINT_Y 167       // below the panel, ending at y 174

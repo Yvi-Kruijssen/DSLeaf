@@ -38,6 +38,10 @@ void about_line(const About *a, int line, char *out, bool *heading);
 // Applies one frame of input. Returns true when the screen should be left (B).
 bool about_update(About *a, uint32_t actions);
 
+// What a touch does (decision 078): the upper half of the text a page up, the lower half a page down, the hint
+// line at the bottom goes back. Returns the action to give about_update.
+uint32_t about_touch(int x, int y);
+
 // Page numbers for the corner of the panel, starting at 1.
 int about_page(const About *a);
 int about_pages(const About *a);

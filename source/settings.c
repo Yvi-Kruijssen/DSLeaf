@@ -24,7 +24,7 @@ const char *settings_label(Setting s) {
 	case SETTING_INDENT: return "Indent";
 	case SETTING_MARGIN: return "Hori. margin";
 	case SETTING_VMARGIN: return "Vert. margin";
-	case SETTING_FOOTER: return "Progress";
+	case SETTING_FOOTER: return "Book progress";
 	case SETTING_PREVIEW: return "Preview page";
 	case SETTING_RESET:  return "Reset all";
 	case SETTING_ABOUT:  return "About";
@@ -84,7 +84,7 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 	case SETTING_MARGIN: plural(out, cap, c->margin, "col", "cols"); break;
 	case SETTING_LINE:   plural(out, cap, c->line_spacing, "px", "px"); break;
 	case SETTING_FOOTER:
-		snprintf(out, cap, "%s", c->footer == FOOTER_PAGE ? "Page count" : c->footer == FOOTER_PERCENT ? "Percentage" : c->footer == FOOTER_NONE ? "Nothing" : "Both");
+		snprintf(out, cap, "%s", c->footer == FOOTER_PAGE ? "Pages" : c->footer == FOOTER_PERCENT ? "Percent" : c->footer == FOOTER_NONE ? "Nothing" : "Both");
 		break;
 	case SETTING_VMARGIN: snprintf(out, cap, "%d px", config_vmargin_px(c)); break;
 	case SETTING_PREVIEW: snprintf(out, cap, "Press A"); break;
@@ -97,8 +97,8 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 void settings_help(Setting s, const char **line1, const char **line2) {
 	switch (s) {
 	case SETTING_SCREEN:
-		*line1 = "Dual: both screens.";
-		*line2 = "Single: bottom. Next book.";
+		*line1 = "Dual: both. Single: bottom.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_THEME:
 		*line1 = "Colours of menus and book.";
@@ -106,35 +106,35 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		break;
 	case SETTING_FONT:
 		*line1 = "Font for the book text.";
-		*line2 = "Add fonts to /DSLeaf/Fonts.";
+		*line2 = "Files go in DSLeaf/Fonts.";
 		break;
 	case SETTING_ORIENTATION:
-		*line1 = "Hold the device sideways to";
-		*line2 = "Used when a book opens.";
+		*line1 = "Read with the DS sideways.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_GAP:
 		*line1 = "Blank lines between paras.";
-		*line2 = "Used when a book is opened.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_INDENT:
-		*line1 = "Space starting a paragraph.";
-		*line2 = "Used when a book is opened.";
+		*line1 = "First-line indent, in cols.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_MARGIN:
 		*line1 = "Empty columns at each side.";
-		*line2 = "Used when a book is opened.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_VMARGIN:
-		*line1 = "Space above and below the";
-		*line2 = "text. Used with a new book.";
+		*line1 = "Space above and below text.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_LINE:
 		*line1 = "Extra pixels between lines.";
-		*line2 = "Pixel fonts. Next book.";
+		*line2 = "Pixel fonts only.";
 		break;
 	case SETTING_FOOTER:
-		*line1 = "Page count and percentage";
-		*line2 = "in the footer. Next book.";
+		*line1 = "What the footer shows.";
+		*line2 = "Applies when a book opens.";
 		break;
 	case SETTING_PREVIEW:
 		*line1 = "Sample page, your settings.";
@@ -245,4 +245,39 @@ SettingsEvent settings_update(SettingsMenu *m, Config *c, uint32_t actions) {
 		m->redraw = true;
 	}
 	return e;
+}
+
+uint32_t settings_touch(SettingsMenu *m, const Config *c, int x, int y) {
+	if (y >= SETTINGS_BACK_Y) return ACT_BACK;
+
+	if (y >= SETTINGS_BUTTON_Y && y < SETTINGS_BUTTON_Y + SETTINGS_BUTTON_H) {
+		int button = -1;
+		if (x >= SETTINGS_BUTTON_X0 && x < SETTINGS_BUTTON_X0 + SETTINGS_BUTTON_W) button = SETTING_PREVIEW;
+		else if (x >= SETTINGS_BUTTON_X1 && x < SETTINGS_BUTTON_X1 + SETTINGS_BUTTON_W) button = SETTING_RESET;
+		else if (x >= SETTINGS_BUTTON_X2 && x < SETTINGS_BUTTON_X2 + SETTINGS_BUTTON_W) button = SETTING_ABOUT;
+		if (button < 0) return ACT_NONE;
+		if (m->selected != button) {
+			m->confirm_reset = false;
+			m->selected = button;
+			m->redraw = true;
+		}
+		return ACT_CONFIRM; // a button is pressed by touching it; Reset still asks twice
+	}
+
+	int row = y / 8 - SETTINGS_FIRST_ROW;
+	if (row < 0 || row >= SETTING_PREVIEW) return ACT_NONE;
+	if (m->selected != row) {
+		m->confirm_reset = false;
+		m->selected = row;
+		m->redraw = true;
+		return ACT_NONE;
+	}
+	// The selected row: the left half of the value goes back, the right half forward.
+	char value[48];
+	settings_value_text(m, c, (Setting)row, value, sizeof value);
+	int chars = (int)strlen(value);
+	if (chars > 14) chars = 14;
+	int width = (chars + 4) * 8; // "< value >"
+	int start = (SETTINGS_VALUE_END + 1) * 8 - width;
+	return x < start + width / 2 ? ACT_LEFT : ACT_RIGHT;
 }

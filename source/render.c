@@ -41,6 +41,12 @@ static bool popup_rot[2];     // the picture is drawn turned, like a rotated pag
 static const Font *ui_font;   // the font of the text in pictures, the built-in 8x8 font
 
 static u16 *map[2];
+// What the tile map should hold. All text is drawn here and copied to the map by render_present, in
+// the vertical blank, together with the change of layers and the bitmap, so a screen that is redrawn
+// changes in one go and does not flash while it is being drawn (decision 080).
+static u16 map_shadow[2][GRID_W * GRID_W];
+static bool map_dirty[2];
+static bool layers_pending; // the layers shown must be set again at the next render_present
 static u16 *gfx[2];
 // Palette memory only takes 16 and 32 bit writes. The pointers are volatile so that a loop copying a colour table
 // cannot be turned into a memcpy, which writes single bytes when the table is not 4-byte aligned (the dark
@@ -56,7 +62,7 @@ typedef struct {
 static const Palette palettes[THEME_COUNT] = {
 	[THEME_NORMAL] = {
 		RGB15(30, 29, 25),
-		{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7), RGB15(14, 22, 8) },
+		{ RGB15(3, 6, 4), RGB15(14, 16, 13), RGB15(24, 3, 3), RGB15(5, 16, 7), RGB15(10, 17, 5) },
 	},
 	[THEME_DARK] = { // black with neutral grey text, the green kept only as the accent (decision 064)
 		RGB15(0, 0, 0),
@@ -71,7 +77,7 @@ static const Palette palettes[THEME_COUNT] = {
 static const u16 backdrop_colours[THEME_COUNT][BD_COUNT] = {
 	// BACK is the dark green of the logo screen and ACCENT its light green (decision 053).
 	[THEME_NORMAL] = {
-		RGB15(3, 7, 6), RGB15(30, 29, 25), RGB15(17, 20, 15), RGB15(25, 25, 21), RGB15(14, 22, 8), RGB15(28, 28, 26),
+		RGB15(3, 7, 6), RGB15(30, 29, 25), RGB15(17, 20, 15), RGB15(25, 25, 21), RGB15(10, 17, 5), RGB15(28, 28, 26),
 		RGB15(31, 31, 30), RGB15(21, 22, 20), RGB15(30, 31, 27), RGB15(3, 6, 4), RGB15(15, 16, 14), RGB15(5, 16, 7),
 		RGB15(19, 20, 18), RGB15(22, 25, 18), RGB15(17, 18, 15),
 	},
@@ -80,10 +86,10 @@ static const u16 backdrop_colours[THEME_COUNT][BD_COUNT] = {
 		RGB15(12, 12, 12), RGB15(1, 1, 1), RGB15(9, 9, 9), RGB15(29, 29, 29), RGB15(12, 12, 12), RGB15(20, 26, 11),
 		RGB15(10, 10, 10), RGB15(18, 18, 18), RGB15(3, 3, 3),
 	},
-	[THEME_SEPIA] = {
-		RGB15(3, 7, 6), RGB15(27, 24, 18), RGB15(15, 11, 7), RGB15(23, 20, 14), RGB15(12, 8, 3), RGB15(25, 22, 17),
+	[THEME_SEPIA] = { // a dark brown background and warm hint text, not the logo's green (decision 078)
+		RGB15(7, 4, 2), RGB15(27, 24, 18), RGB15(15, 11, 7), RGB15(23, 20, 14), RGB15(12, 8, 3), RGB15(25, 22, 17),
 		RGB15(30, 28, 23), RGB15(18, 15, 10), RGB15(28, 25, 18), RGB15(7, 5, 3), RGB15(16, 13, 10), RGB15(12, 8, 3),
-		RGB15(17, 14, 10), RGB15(21, 22, 16), RGB15(18, 14, 9),
+		RGB15(17, 14, 10), RGB15(25, 20, 13), RGB15(18, 14, 9),
 	},
 };
 
@@ -122,8 +128,8 @@ static void upload_tiles(void) {
 	}
 }
 
-// Shows the tile layer or the bitmap layer on both screens, not both.
-static void show_layer(void) {
+// Shows the tile layer or the bitmap layer on both screens, not both. Sets them now.
+static void apply_layers(void) {
 	// A picture behind the text (backdrop) shows the bitmap layer and the tile text together.
 	u32 top = pixel || logo[SCREEN_TOP] ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
 	u32 bottom = pixel || logo[SCREEN_BOTTOM] ? DISPLAY_BG2_ACTIVE : DISPLAY_BG0_ACTIVE;
@@ -133,13 +139,16 @@ static void show_layer(void) {
 	videoSetModeSub(MODE_5_2D | bottom);
 }
 
+// The same, but at the next render_present (in the vertical blank).
+static void show_layer(void) { layers_pending = true; }
+
 void render_init(void) {
 	powerOn(POWER_ALL_2D);
 	lcdMainOnTop();
 
 	vramSetBankA(VRAM_A_MAIN_BG);
 	vramSetBankC(VRAM_C_SUB_BG);
-	show_layer();
+	apply_layers();
 
 	bg_id[SCREEN_TOP] = bgInit(0, BgType_Text4bpp, BgSize_T_256x256, TILE_MAP_BASE, 0);
 	bg_id[SCREEN_BOTTOM] = bgInitSub(0, BgType_Text4bpp, BgSize_T_256x256, TILE_MAP_BASE, 0);
@@ -177,23 +186,43 @@ void render_clear(Screen screen) {
 		return;
 	}
 	u16 blank = (u16)(' ' * tiles_per_glyph()); // the space glyph is empty
-	for (int i = 0; i < GRID_W * GRID_W; i++) map[screen][i] = blank;
+	for (int i = 0; i < GRID_W * GRID_W; i++) map_shadow[screen][i] = blank;
+	map_dirty[screen] = true;
 }
 
-// Copies the buffer of a screen to the bitmap layer, if it changed.
-void render_present(Screen screen) {
-	if (!(pixel || backdrop[screen]) || !fb_dirty[screen] || logo[screen]) return;
-	fb_dirty[screen] = false;
+// Waits for the vertical blank unless it has already begun, so that what follows is not seen half done.
+static void wait_for_blank(void) {
+	if (REG_VCOUNT < 192) swiWaitForVBlank();
+}
 
-	volatile u32 *dst = (volatile u32 *)bitmap[screen];
-	const u32 *src = (const u32 *)fb[screen];
-	for (int i = 0; i < PIX_W * PIX_H / 4; i++) dst[i] = src[i];
+// Makes what was drawn visible: the tile map, the layers shown, and the buffer of the bitmap layer.
+void render_present(Screen screen) {
+	bool copy = (pixel || backdrop[screen]) && fb_dirty[screen] && !logo[screen];
+	if (!copy && !map_dirty[screen] && !layers_pending) return;
+	wait_for_blank();
+
+	if (layers_pending) {
+		layers_pending = false;
+		apply_layers();
+	}
+	if (map_dirty[screen]) {
+		map_dirty[screen] = false;
+		volatile u32 *dst = (volatile u32 *)map[screen];
+		const u32 *src = (const u32 *)map_shadow[screen];
+		for (int i = 0; i < GRID_W * GRID_W / 2; i++) dst[i] = src[i];
+	}
+	if (copy) {
+		fb_dirty[screen] = false;
+		volatile u32 *dst = (volatile u32 *)bitmap[screen];
+		const u32 *src = (const u32 *)fb[screen];
+		for (int i = 0; i < PIX_W * PIX_H / 4; i++) dst[i] = src[i];
+	}
 }
 
 static void restart(void) {
 	pixel = font && !font_is_tile(font);
 	if (font && !pixel) upload_tiles();
-	show_layer();
+	apply_layers();
 	render_clear(SCREEN_TOP);
 	render_clear(SCREEN_BOTTOM);
 	render_present(SCREEN_TOP);
@@ -246,8 +275,9 @@ void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 	if (!rotated) {
 		// A tall glyph is two tiles, one above the other.
 		int y = row * per + safe_rows();
-		map[screen][y * GRID_W + col] = tile;
-		if (per == 2) map[screen][(y + 1) * GRID_W + col] = tile + 1;
+		map_shadow[screen][y * GRID_W + col] = tile;
+		if (per == 2) map_shadow[screen][(y + 1) * GRID_W + col] = tile + 1;
+		map_dirty[screen] = true;
 		return;
 	}
 
@@ -256,8 +286,9 @@ void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 	// turned on its side is two tiles side by side, the left one first.
 	int y = col + safe_rows();
 	int x = GRID_W - per * (row + 1);
-	map[screen][y * GRID_W + x] = tile;
-	if (per == 2) map[screen][y * GRID_W + x + 1] = tile + 1;
+	map_shadow[screen][y * GRID_W + x] = tile;
+	if (per == 2) map_shadow[screen][y * GRID_W + x + 1] = tile + 1;
+	map_dirty[screen] = true;
 }
 
 int render_puts(Screen screen, int col, int row, const char *str, Style style) {
@@ -307,7 +338,7 @@ void render_popup_begin(Screen screen, int x, int y, int w, int h) {
 		popup_to_screen(rotated, x, y, w, h, &sx, &sy, &sw, &sh);
 		u16 blank = (u16)(' ' * tiles_per_glyph());
 		for (int cy = sy / 8; cy <= (sy + sh - 1) / 8 && cy < GRID_W; cy++) {
-			for (int cx = sx / 8; cx <= (sx + sw - 1) / 8 && cx < GRID_W; cx++) map[screen][cy * GRID_W + cx] = blank;
+			for (int cx = sx / 8; cx <= (sx + sw - 1) / 8 && cx < GRID_W; cx++) map_shadow[screen][cy * GRID_W + cx] = blank;
 		}
 	}
 	fb_dirty[screen] = true;
@@ -389,13 +420,13 @@ void render_show_logo(Screen screen) {
 	}
 
 	logo[screen] = true;
-	show_layer();
+	apply_layers();
 }
 
 void render_hide_logo(Screen screen) {
 	logo[screen] = false;
 	fb_dirty[screen] = true; // the bitmap layer was overwritten, so a pixel font has to copy its page again
-	show_layer();
+	apply_layers();
 }
 
 void render_fade(Screen screen, int level) {

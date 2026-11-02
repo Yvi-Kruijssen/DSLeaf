@@ -85,3 +85,10 @@ int about_page(const About *a) {
 	if (a->top >= max_top(a)) page = about_pages(a);
 	return page;
 }
+
+uint32_t about_touch(int x, int y) {
+	(void)x;
+	if (y >= 160) return ACT_BACK;
+	if (y < 15 || y >= 40 + ABOUT_ROWS * 8) return ACT_NONE;
+	return y < 40 + ABOUT_ROWS * 4 ? ACT_LEFT : ACT_RIGHT;
+}

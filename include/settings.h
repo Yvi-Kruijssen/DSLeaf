@@ -32,6 +32,17 @@ typedef enum {
 	SETTING_COUNT,
 } Setting;
 
+// Where things are on the Settings screen, in pixels (touch and drawing share them, decision 078).
+#define SETTINGS_FIRST_ROW 5   // text row of the first setting
+#define SETTINGS_VALUE_END 29  // the value ends at this column
+#define SETTINGS_BUTTON_Y 124
+#define SETTINGS_BUTTON_H 16
+#define SETTINGS_BUTTON_W 70
+#define SETTINGS_BUTTON_X0 16
+#define SETTINGS_BUTTON_X1 93
+#define SETTINGS_BUTTON_X2 170
+#define SETTINGS_BACK_Y 160    // a touch from here down goes back (the hint line)
+
 typedef struct {
 	int selected;
 	bool redraw;                       // something changed on screen
@@ -69,6 +80,12 @@ void settings_value_text(const SettingsMenu *menu, const Config *config, Setting
 
 // The size of the font in use, as listed (8x8 if it is not in the list).
 void settings_font_size(const SettingsMenu *menu, const Config *config, int *width, int *height);
+
+// What a touch at (x, y) does (decision 078): a row that is not selected gets selected (nothing else
+// happens), a touch on the selected row changes its value, left or right of the middle of the value,
+// a button is selected and pressed, and the hint line at the bottom goes back. Returns the action for
+// settings_update (ACT_NONE if the touch only moved the selection).
+uint32_t settings_touch(SettingsMenu *menu, const Config *config, int x, int y);
 
 // A short explanation of a setting, in two lines of at most 30 characters.
 void settings_help(Setting setting, const char **line1, const char **line2);
