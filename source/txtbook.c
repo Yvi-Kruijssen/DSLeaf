@@ -6,6 +6,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "mbcs.h"
 #include "storage.h"
 #include "textx.h"
 
@@ -22,6 +23,10 @@ struct TxtBook {
 	bool line_mode;
 	uint32_t *start;       // the file offset where each chapter starts, and the end of the file after the last
 };
+
+TxtEncoding txt_encoding(const Epub *book) {
+	return book->txt ? book->txt->encoding : TXT_UTF8;
+}
 
 bool txt_is_path(const char *path) {
 	size_t n = strlen(path);
@@ -159,6 +164,24 @@ static int dec_cp_raw(TxtDecoder *d) {
 	case TXT_CP1250:
 	case TXT_ISO8859_2:
 	case TXT_ISO8859_15: return legacy_in(d->encoding, b);
+	case TXT_CP1251: return b < 0x80 ? b : cp1251_high[b - 0x80];
+	case TXT_GBK:
+	case TXT_BIG5:
+	case TXT_SJIS:
+	case TXT_EUCKR: {
+		if (b < 0x80) return b;
+		MbKind kind = d->encoding == TXT_GBK ? MB_GBK : d->encoding == TXT_BIG5 ? MB_BIG5 : d->encoding == TXT_SJIS ? MB_SJIS : MB_EUCKR;
+		if (kind == MB_SJIS && b >= 0xA1 && b <= 0xDF) return 0xFF61 + (b - 0xA1); // half-width katakana
+		if (mb_is_lead(kind, b)) {
+			int trail = dec_peek_byte(d);
+			uint16_t cp = trail >= 0 ? mb_decode(kind, b, trail) : 0;
+			if (cp) {
+				dec_byte(d);
+				return cp;
+			}
+		}
+		return legacy(b); // not a pair of this encoding: the byte as Windows-1252, like a stray byte in UTF-8
+	}
 	case TXT_UTF16LE:
 	case TXT_UTF16BE: {
 		int second = dec_byte(d);
@@ -555,7 +578,7 @@ static bool utf8_likely(const uint8_t *p, size_t n) {
 static bool cp_is_letter(int cp) {
 	if (cp < 0x80) return (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
 	if (cp >= 0xC0 && cp <= 0x24F) return cp != 0xD7 && cp != 0xF7;
-	return false;
+	return cp >= 0x370 && cp <= 0x4FF; // Greek and Cyrillic
 }
 
 // Which 8 bit encoding is a text that is not UTF-8? Each candidate is scored on the accented bytes that stand right
@@ -582,6 +605,120 @@ static TxtEncoding detect_legacy(const uint8_t *p, size_t n) {
 		if (score[c] > score[best]) best = c;
 	}
 	return score[best] >= 3 && score[best] > score[0] ? candidates[best] : TXT_LATIN1;
+}
+
+// Is the sample English? A text that is English has about a quarter of its words among a few very common ones (18 per cent is
+// asked for) and the word "the" among them (decision 093). Used to decide about hyphenation, which uses English patterns.
+static bool looks_english(const uint8_t *p, size_t n) {
+	static const char *const common[] = { "the", "and", "of", "to", "a", "in", "that", "is", "was", "he", "she", "it", "for", "with", "as", "his", "her", "had", "you", "not" };
+	int words = 0, hits = 0, the = 0;
+	for (size_t i = 0; i < n;) {
+		if (!isalpha(p[i])) {
+			i++;
+			continue;
+		}
+		char w[8];
+		size_t len = 0;
+		while (i < n && (isalpha(p[i]) || p[i] >= 0x80)) {
+			if (len < sizeof w - 1) w[len] = (char)tolower(p[i]);
+			len++;
+			i++;
+		}
+		words++;
+		if (len >= sizeof w) continue;
+		w[len] = '\0';
+		if (strcmp(w, "the") == 0) the++;
+		for (size_t k = 0; k < sizeof common / sizeof common[0]; k++) {
+			if (strcmp(w, common[k]) == 0) {
+				hits++;
+				break;
+			}
+		}
+	}
+	return words >= 80 && hits * 100 >= words * 18 && the * 100 >= words * 2; // "the" is in no other language of Latin letters
+}
+
+// ---- The old double-byte encodings (decision 094) ----
+typedef struct {
+	int pairs, bad;     // valid pairs of two bytes, and high bytes that are not part of one
+	int kana, hangul;   // decoded characters that are kana or Hangul syllables
+	int halfkana;       // single bytes 0xA1 to 0xDF read as half-width katakana (Shift-JIS)
+	int trail_low;      // pairs whose second byte is below 0x80
+	int both_high;      // pairs whose two bytes are both 0xA1 or more (EUC-KR proper, not the other cp949 syllables)
+	int level1;         // pairs of the most used characters of GB2312 (leads 0xB0 to 0xD7, trails 0xA1 or more)
+	int big5_common;    // pairs whose lead is in the most used part of Big5 (0xA4 to 0xC6)
+} MbScore;
+
+static MbScore score_mb(MbKind kind, const uint8_t *p, size_t n) {
+	MbScore s;
+	memset(&s, 0, sizeof s);
+	for (size_t i = 0; i < n;) {
+		int b = p[i];
+		if (b < 0x80) {
+			i++;
+			continue;
+		}
+		if (kind == MB_SJIS && b >= 0xA1 && b <= 0xDF) {
+			s.halfkana++;
+			i++;
+			continue;
+		}
+		if (mb_is_lead(kind, b) && i + 1 < n) {
+			int t = p[i + 1];
+			uint16_t cp = mb_decode(kind, b, t);
+			if (cp) {
+				s.pairs++;
+				if (cp >= 0x3040 && cp <= 0x30FF) s.kana++;
+				if (cp >= 0xAC00 && cp <= 0xD7A3) s.hangul++;
+				if (t < 0x80) s.trail_low++;
+				if (b >= 0xA1 && t >= 0xA1) s.both_high++;
+				if (b >= 0xB0 && b <= 0xD7 && t >= 0xA1) s.level1++;
+				if (b >= 0xA4 && b <= 0xC6) s.big5_common++;
+				i += 2;
+				continue;
+			}
+		}
+		s.bad++;
+		i++;
+	}
+	return s;
+}
+
+// Is the text Windows-1251, Korean, Japanese or Chinese? A text of these has most of its bytes above 0x7F (a Western text
+// has a few accents). Cyrillic in Windows-1251 is nearly all bytes 0xC0 to 0xFF; the others are told apart by what the pairs
+// of bytes decode to: Korean is all Hangul syllables (EUC-KR rows 0xB0 to 0xC8), Japanese has kana, GBK mostly the common
+// characters of GB2312 with trail bytes above 0x7F, Big5 mostly the common characters of Big5 with many trail bytes below
+// 0x80. Returns false if it is none of them (then the 8 bit guess goes on).
+static bool detect_wide(const uint8_t *p, size_t n, TxtEncoding *out) {
+	size_t high = 0, cyr = 0;
+	for (size_t i = 0; i < n; i++) {
+		if (p[i] < 0x80) continue;
+		high++;
+		if (p[i] >= 0xC0 || p[i] == 0xA8 || p[i] == 0xB8) cyr++;
+	}
+	if (high < 40 || high * 4 < n) return false; // not enough: a Western text, or too little to judge
+	if (cyr * 100 >= high * 90) {
+		*out = TXT_CP1251;
+		return true;
+	}
+	MbScore ko = score_mb(MB_EUCKR, p, n), ja = score_mb(MB_SJIS, p, n), gb = score_mb(MB_GBK, p, n), b5 = score_mb(MB_BIG5, p, n);
+	if (ko.pairs >= 10 && ko.bad * 10 <= ko.pairs && ko.hangul * 100 >= ko.pairs * 90 && ko.both_high * 100 >= ko.pairs * 90) {
+		*out = TXT_EUCKR;
+		return true;
+	}
+	if (ja.pairs >= 10 && ja.bad * 10 <= ja.pairs && ja.kana * 100 >= ja.pairs * 8 && ja.halfkana * 10 <= ja.pairs) {
+		*out = TXT_SJIS;
+		return true;
+	}
+	if (gb.pairs >= 10 && gb.bad * 10 <= gb.pairs && gb.level1 * 100 >= gb.pairs * 50 && gb.trail_low * 100 <= gb.pairs * 12) {
+		*out = TXT_GBK;
+		return true;
+	}
+	if (b5.pairs >= 10 && b5.bad * 10 <= b5.pairs && b5.big5_common * 100 >= b5.pairs * 50 && b5.trail_low * 100 >= b5.pairs * 15) {
+		*out = TXT_BIG5;
+		return true;
+	}
+	return false;
 }
 
 EpubResult txt_open(Epub *book, const char *path) {
@@ -625,9 +762,11 @@ EpubResult txt_open(Epub *book, const char *path) {
 			fclose(f);
 			return EPUB_ERR_NO_CHAPTERS;
 		}
-		if (!utf8_likely(head, got)) enc = detect_legacy(head, got);
+		if (!utf8_likely(head, got) && !detect_wide(head, got, &enc)) enc = detect_legacy(head, got);
+		else if (!utf8_likely(head, got)) { /* enc was set by detect_wide */ }
 	}
 
+	bool english = enc != TXT_UTF16LE && enc != TXT_UTF16BE && looks_english(head, got);
 	struct TxtBook *t = calloc(1, sizeof *t);
 	if (!t) {
 		fclose(f);
@@ -755,6 +894,7 @@ EpubResult txt_open(Epub *book, const char *path) {
 	t->start[count] = t->file_size;
 	for (int i = 0; i < count; i++) book->chapter_size[i] = t->start[i + 1] - t->start[i];
 	book->chapter_count = count;
+	if (english) snprintf(book->lang, sizeof book->lang, "en");
 	book->txt = t;
 
 	// The title is the file name without the ending.

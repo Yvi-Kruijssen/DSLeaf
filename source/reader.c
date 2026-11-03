@@ -166,6 +166,8 @@ EpubResult reader_open(Reader *r, const char *path, int chapter, uint32_t offset
 
 	EpubResult result = epub_open(&r->book, path);
 	if (result != EPUB_OK) return result;
+	// Hyphenation uses English patterns: only for a book in English (decision 093).
+	if ((r->style.scripts & SCRIPT_HYPHEN) && strncmp(r->book.lang, "en", 2) != 0) r->style.scripts &= (uint8_t)~SCRIPT_HYPHEN;
 
 	r->chapter_start = malloc(sizeof *r->chapter_start * ((size_t)r->book.chapter_count + 1));
 	if (!r->chapter_start) {

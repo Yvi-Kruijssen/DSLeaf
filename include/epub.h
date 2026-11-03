@@ -33,6 +33,7 @@ typedef enum {
 typedef struct {
 	Zip zip;
 	char title[EPUB_TITLE_MAX];          // empty if the book has none
+	char lang[8];                        // the language of the book in lower case, such as "en" or "en-us", empty if unknown (decision 093)
 	char toc_path[EPUB_PATH_MAX];        // table of contents file in the zip, or empty
 	bool toc_is_nav;                     // true for an EPUB 3 nav document, false for NCX
 	int chapter_count;

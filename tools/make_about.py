@@ -36,6 +36,7 @@ items += ["", "#Code from others",
 ofl = paragraphs("third_party/terminus/OFL.txt")
 start = next(i for i, p in enumerate(ofl) if p.startswith("SIL OPEN FONT LICENSE"))
 items += ofl[start:]
+items += ["", "#Hyphenation patterns"] + paragraphs("third_party/hyphen/NOTICE.txt")
 items += ["", "#libnds licence (zlib)"] + paragraphs("third_party/libnds/LICENSE.txt")
 items += ["", "#libfat licence (BSD)"] + paragraphs("third_party/libfat/LICENSE.txt")
 

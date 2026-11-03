@@ -146,7 +146,7 @@ static bool open_book(const char *path) {
 	font_set_bookmark_glyph(&reading_font);        // the icon of the status row (decision 054)
 	int cols, rows;
 	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
-	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent, (uint8_t)font_scripts(&reading_font) };
+	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent, (uint8_t)(font_scripts(&reading_font) | (config.hyphenation ? SCRIPT_HYPHEN : 0)) };
 
 	// Pick up where the book was left off, and load its bookmarks. A book is
 	// recognised by its path and size.
@@ -245,7 +245,7 @@ static void show_preview(void) {
 	reading_font.safe = config_vmargin_px(&config);
 	int cols, rows;
 	reader_geometry(&reading_font, config.margin, config.rotate, &cols, &rows);
-	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent, (uint8_t)font_scripts(&reading_font) };
+	LayoutStyle style = { config.paragraph_gap, config.paragraph_indent, (uint8_t)(font_scripts(&reading_font) | (config.hyphenation ? SCRIPT_HYPHEN : 0)) };
 	preview_build(&preview, cols, rows, dual_screen() ? 2 : 1, &style);
 	if (dual_screen()) hide_top_logo(); // the top screen shows the first page
 	render_set_view(&reading_font, config.rotate);

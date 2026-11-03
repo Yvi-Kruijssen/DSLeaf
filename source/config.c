@@ -21,6 +21,7 @@ void config_set_defaults(Config *c) {
 	c->margin = 1;           // decision 026
 	c->line_spacing = 1;     // decision 050
 	c->footer = FOOTER_BOTH; // decision 056
+	c->hyphenation = true;   // decision 093
 	c->vmargin = CONFIG_VMARGIN_DEFAULT; // 16 pixels, decision 062
 	snprintf(c->font, sizeof c->font, "%s", CONFIG_FONT_DEFAULT);
 }
@@ -77,6 +78,9 @@ static void apply(Config *c, const char *key, const char *value) {
 		parse_number(value, CONFIG_INDENT_MAX, &c->paragraph_indent);
 	} else if (strcmp(key, "margin") == 0) {
 		parse_number(value, CONFIG_MARGIN_MAX, &c->margin);
+	} else if (strcmp(key, "hyphenation") == 0) {
+		if (strcmp(value, "1") == 0) c->hyphenation = true;
+		else if (strcmp(value, "0") == 0) c->hyphenation = false;
 	} else if (strcmp(key, "footer") == 0) {
 		if (strcmp(value, "both") == 0) c->footer = FOOTER_BOTH;
 		else if (strcmp(value, "page") == 0) c->footer = FOOTER_PAGE;
@@ -114,12 +118,12 @@ void config_parse(Config *c, const char *text) {
 
 int config_format(const Config *c, char *buf, size_t cap) {
 	int n = snprintf(buf, cap,
-	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\nline_spacing=%d\nfooter=%s\nvert_margin=%d\n",
+	                 "screen_mode=%s\ntheme=%s\nfont=%s\nrotate=%d\nparagraph_gap=%d\nparagraph_indent=%d\nmargin=%d\nline_spacing=%d\nfooter=%s\nvert_margin=%d\nhyphenation=%d\n",
 	                 c->display == DISPLAY_SINGLE ? "single" : "dual",
 	                 c->theme == THEME_DARK ? "dark" : c->theme == THEME_SEPIA ? "sepia" : "normal", c->font,
 	                 c->rotate ? 1 : 0, c->paragraph_gap, c->paragraph_indent, c->margin, c->line_spacing,
 	                 c->footer == FOOTER_PAGE ? "page" : c->footer == FOOTER_PERCENT ? "percent" : c->footer == FOOTER_NONE ? "none" : "both",
-	                 config_vmargin_px(c));
+	                 config_vmargin_px(c), c->hyphenation ? 1 : 0);
 	return (n < 0 || (size_t)n >= cap) ? -1 : n;
 }
 

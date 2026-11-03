@@ -19,8 +19,8 @@
 #define PREVIEW_X SETTINGS_BUTTON_X0
 #define RESET_X SETTINGS_BUTTON_X1
 #define ABOUT_X SETTINGS_BUTTON_X2
-#define HELP_RULE_Y 143
-#define HELP_ROW 18      // two lines: the help, then the second help line (or the size or a note)
+#define HELP_RULE_Y 151
+#define HELP_ROW 19      // one line: the help (or, for the font and the line spacing, the sizes). The eleventh setting took the second line (decision 093)
 #define HINT_Y 167       // below the panel, ending at y 174
 
 bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
@@ -59,25 +59,25 @@ bool settings_draw(SettingsMenu *m, const Config *c, Screen screen) {
 	render_backdrop_rect(screen, PAPER_RULE_X, HELP_RULE_Y, PAPER_RULE_W, 1, BD_RULE);
 	const char *line1, *line2;
 	settings_help((Setting)m->selected, &line1, &line2);
-	render_puts(screen, 2, HELP_ROW, line1, STYLE_DIM);
 
 	if (m->selected == SETTING_FONT || m->selected == SETTING_LINE) {
-		// The second line is how much text a page of this font holds, with the margins and spacing as set now.
+		// The size of the font and of the page it gives, with the margins and spacing as set now.
 		int w, h;
 		settings_font_size(m, c, &w, &h);
 		Font size = { .width = w, .height = h, .line_gap = c->line_spacing, .safe = config_vmargin_px(c) };
 		if (m->selected == SETTING_LINE && font_is_tile(&size)) {
-			render_puts(screen, 2, HELP_ROW + 1, "This font ignores spacing.", STYLE_NORMAL);
+			render_puts(screen, 2, HELP_ROW, "This font ignores spacing.", STYLE_NORMAL);
 		} else {
 			int cols, rows;
 			reader_geometry(&size, c->margin, c->rotate, &cols, &rows);
 			char info[40];
 			snprintf(info, sizeof info, "Size %dx%d, page %dx%d", w, h, cols, rows);
-			render_puts(screen, 2, HELP_ROW + 1, info, STYLE_NORMAL);
+			render_puts(screen, 2, HELP_ROW, info, STYLE_NORMAL);
 		}
 	} else {
-		render_puts(screen, 2, HELP_ROW + 1, line2, STYLE_DIM);
+		render_puts(screen, 2, HELP_ROW, line1, STYLE_DIM);
 	}
+	(void)line2;
 
 	paper_hint(screen, 12, HINT_Y, "Left/Right change  B back");
 	return true;

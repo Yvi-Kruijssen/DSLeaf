@@ -45,6 +45,7 @@ typedef struct {
 	uint8_t margin;           // 0 to CONFIG_MARGIN_MAX
 	uint8_t line_spacing;     // 0 to CONFIG_LINE_MAX, pixel fonts only
 	FooterInfo footer;        // what the reading footer shows (decision 056)
+	bool hyphenation;         // break English words at hyphenation points (decision 093)
 	uint8_t vmargin;          // 0 to CONFIG_VMARGIN_MAX: 8, 16 or 24 pixels above and below the text (decision 062)
 	char font[CONFIG_FONT_MAX];
 } Config;

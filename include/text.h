@@ -11,6 +11,7 @@ typedef uint16_t Glyph;
 
 // Which scripts the font in use can draw itself (bits).
 #define SCRIPT_ALPHABETS 1 // Greek and Cyrillic letters (font_ext.h)
+#define SCRIPT_HYPHEN 4    // not a script: the layout breaks English words at hyphenation points (hyphen.h, decision 093). Part of the same set of switches so that it is in the page count key
 #define SCRIPT_CJK 2       // Chinese, Japanese and Korean characters from the CJK font (cjk.h): two cells wide, GLYPH_FILL after the code
 
 // Decodes one UTF-8 character at *s and advances *s past it. Writes the glyph

@@ -240,7 +240,7 @@ static EpubResult read_package(Zip *zip, const char *opf_path, Epub *book, Packa
 	XmlReader r;
 	if (!open_xml(zip, opf_path, &src, &r)) return EPUB_ERR_BAD_PACKAGE;
 
-	bool in_title = false, have_title = false;
+	bool in_title = false, have_title = false, in_lang = false;
 	char title_raw[EPUB_TITLE_MAX * 2];
 	size_t title_len = 0;
 	bool saw_package = false;
@@ -252,9 +252,19 @@ static EpubResult read_package(Zip *zip, const char *opf_path, Epub *book, Packa
 				memcpy(title_raw + title_len, r.text, r.text_len);
 				title_len += r.text_len;
 			}
+			if (in_lang && book->lang[0] == '\0') { // the first language of the book (dc:language), trimmed and in lower case
+				size_t n = 0;
+				for (size_t i = 0; i < r.text_len && n + 1 < sizeof book->lang; i++) {
+					char c = r.text[i];
+					if (c == ' ' || c == '\n' || c == '\t' || c == '\r') continue;
+					book->lang[n++] = (char)tolower((unsigned char)c);
+				}
+				book->lang[n] = '\0';
+			}
 			continue;
 		}
 		if (e == XML_END) {
+			if (strcasecmp(r.name, "language") == 0) in_lang = false;
 			if (in_title && strcasecmp(r.name, "title") == 0) {
 				in_title = false;
 				have_title = true;
@@ -267,6 +277,8 @@ static EpubResult read_package(Zip *zip, const char *opf_path, Epub *book, Packa
 		// A start tag.
 		if (strcasecmp(r.name, "package") == 0) {
 			saw_package = true;
+		} else if (strcasecmp(r.name, "language") == 0 && book->lang[0] == '\0') {
+			in_lang = true;
 		} else if (strcasecmp(r.name, "title") == 0 && !have_title && !in_title) {
 			in_title = true;
 			title_len = 0;

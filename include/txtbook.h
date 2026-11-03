@@ -31,6 +31,9 @@
 // True if the path ends with .txt (any case).
 bool txt_is_path(const char *path);
 
+// The encoding the open text book was read as (for tests and diagnostics).
+TxtEncoding txt_encoding(const Epub *book);
+
 // Opens a text file as a book: finds the encoding and the chapters. Returns EPUB_OK or the reason it failed
 // (EPUB_ERR_READ, EPUB_ERR_NO_CHAPTERS for an empty file or one without text, EPUB_ERR_MEMORY).
 EpubResult txt_open(Epub *book, const char *path);

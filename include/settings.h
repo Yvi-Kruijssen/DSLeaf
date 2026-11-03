@@ -25,6 +25,7 @@ typedef enum {
 	SETTING_INDENT,  // first-line indent
 	SETTING_LINE,    // extra pixel rows between lines (pixel fonts only)
 	SETTING_GAP,     // blank lines between paragraphs
+	SETTING_HYPHEN,  // break English words at hyphenation points: on or off (decision 093)
 	// Three buttons below the list, side by side: Left and Right move between them.
 	SETTING_PREVIEW, // shows a sample page (A)
 	SETTING_RESET,   // back to the defaults (asks for a second A)
@@ -35,7 +36,7 @@ typedef enum {
 // Where things are on the Settings screen, in pixels (touch and drawing share them, decision 078).
 #define SETTINGS_FIRST_ROW 5   // text row of the first setting
 #define SETTINGS_VALUE_END 29  // the value ends at this column
-#define SETTINGS_BUTTON_Y 124
+#define SETTINGS_BUTTON_Y 132
 #define SETTINGS_BUTTON_H 16
 #define SETTINGS_BUTTON_W 70
 #define SETTINGS_BUTTON_X0 16

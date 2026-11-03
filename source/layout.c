@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "hyphen.h"
 #include "text.h"
 
 #define GLYPHS_MAX (TEXTX_WORD_MAX * 3)
@@ -206,19 +207,51 @@ static bool cannot_end_line(Glyph g) {
 // Where to end the next piece of glyphs[pos, total) on a line with `avail` columns left: total if all of it fits,
 // otherwise the position after the last break that fits (with *soft set when that is a soft hyphen, which is
 // drawn as a hyphen), or -1 if there is no break that fits.
-static int break_point(const Glyph *g, int pos, int total, int avail, bool *soft) {
+// Marks the places inside the English words of glyphs[0, total) where a hyphen may go: auto[k] is true for a break after
+// glyph k - 1. Only runs of ASCII letters of 5 to HYPHEN_WORD_MAX are looked at, and not in a word that has soft hyphens (the
+// author has chosen where it may break).
+static void auto_points(const Glyph *g, int total, bool auto_pt[GLYPHS_MAX + 1]) {
+	memset(auto_pt, 0, (size_t)(total + 1) * sizeof auto_pt[0]);
+	for (int i = 0; i < total; i++) {
+		if (g[i] == SOFT_HYPHEN) return;
+	}
+	for (int i = 0; i < total;) {
+		int j = i;
+		while (j < total && ((g[j] >= 'a' && g[j] <= 'z') || (g[j] >= 'A' && g[j] <= 'Z'))) j++;
+		int n = j - i;
+		bool shouting = n >= 2 && g[i] >= 'A' && g[i] <= 'Z' && g[i + 1] >= 'A' && g[i + 1] <= 'Z'; // WORDS IN CAPITALS are left whole
+		if (n >= HYPHEN_LEFT_MIN + HYPHEN_RIGHT_MIN && n <= HYPHEN_WORD_MAX && !shouting) {
+			char word[HYPHEN_WORD_MAX + 1];
+			for (int k = 0; k < n; k++) word[k] = (char)(g[i + k] | 0x20); // lower case
+			bool pts[HYPHEN_WORD_MAX + 1];
+			hyphen_points(word, n, pts);
+			for (int k = 1; k < n; k++) auto_pt[i + k] = pts[k];
+		}
+		i = j > i ? j : i + 1;
+	}
+}
+
+// Where to end the next piece of glyphs[pos, total) on a line with `avail` columns left: total if all of it fits,
+// otherwise the position after the last break that fits (with *soft set when that is a soft hyphen or a hyphenation point,
+// which is drawn as a hyphen), or -1 if there is no break that fits.
+static int break_point(const Glyph *g, int pos, int total, int avail, bool *soft, bool hyphenate) {
 	*soft = false;
 	if (visible_width(g, pos, total) <= avail) return total;
+	bool auto_pt[GLYPHS_MAX + 1];
+	if (hyphenate) auto_points(g, total, auto_pt);
+	else auto_pt[0] = false;
 	int best = -1;
 	for (int i = pos; i < total - 1; i++) {
 		bool is_soft = g[i] == SOFT_HYPHEN && i > pos;
+		bool is_auto = hyphenate && i + 1 > pos + 1 && auto_pt[i + 1];
 		bool is_hyphen = g[i] == '-' && i > pos && (is_letter_glyph(g[i - 1]) || g[i - 1] == '-') && is_letter_glyph(g[i + 1]);
 		bool is_wide = g[i] == GLYPH_FILL && i > pos && !cannot_start_line(g[i + 1]) && !cannot_end_line(g[i - 1]);
-		if (!is_soft && !is_hyphen && !is_wide) continue;
-		int width = visible_width(g, pos, i + 1) + (is_soft ? 1 : 0);
+		if (!is_soft && !is_hyphen && !is_wide && !is_auto) continue;
+		bool drawn = is_soft || is_auto; // these get a hyphen when the line ends there
+		int width = visible_width(g, pos, i + 1) + (drawn ? 1 : 0);
 		if (width > avail) break;
 		best = i + 1;
-		*soft = is_soft;
+		*soft = drawn;
 	}
 	return best;
 }
@@ -248,7 +281,7 @@ static bool place_word(State *s, uint32_t offset, const Glyph *glyphs, int total
 			if (s->cur_len == 0 && !start_line(s, offset, pos)) return false;
 			int avail = s->cols - s->cur_len;
 			bool soft;
-			int end = break_point(glyphs, pos, total, avail, &soft);
+			int end = break_point(glyphs, pos, total, avail, &soft, (s->style.scripts & SCRIPT_HYPHEN) != 0);
 			if (end < 0) { // nothing to break at: a word wider than the line is cut
 				int shown = 0;
 				end = pos;
@@ -267,7 +300,7 @@ static bool place_word(State *s, uint32_t offset, const Glyph *glyphs, int total
 		int gap = (space_before && first_piece) ? 1 : 0;
 		int avail = s->cols - s->cur_len - gap;
 		bool soft;
-		int end = break_point(glyphs, pos, total, avail, &soft);
+		int end = break_point(glyphs, pos, total, avail, &soft, (s->style.scripts & SCRIPT_HYPHEN) != 0);
 		if (end == total) { // all of it fits on this line
 			if (gap) s->cur[s->cur_len++] = ' ';
 			append_glyphs(s, glyphs, pos, total, false);

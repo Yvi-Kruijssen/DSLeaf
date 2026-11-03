@@ -18,6 +18,11 @@ typedef enum {
 	TXT_CP1250,      // Windows-1250 (Central European)
 	TXT_ISO8859_2,   // ISO-8859-2 (Central European)
 	TXT_ISO8859_15,  // ISO-8859-15 (Latin-1 with the euro and a few French and Finnish letters)
+	TXT_CP1251,      // Windows-1251 (Cyrillic)
+	TXT_GBK,         // GBK and GB2312 (simplified Chinese), two bytes a character (decision 094)
+	TXT_BIG5,        // Big5 (traditional Chinese)
+	TXT_SJIS,        // Shift-JIS (Japanese)
+	TXT_EUCKR,       // EUC-KR (Korean)
 } TxtEncoding;
 
 // Reads characters (code points) from a byte range of a file, decoding the encoding.

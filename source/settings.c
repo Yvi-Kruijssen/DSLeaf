@@ -21,6 +21,7 @@ const char *settings_label(Setting s) {
 	case SETTING_LINE:   return "Line spacing";
 	case SETTING_ORIENTATION: return "Orientation";
 	case SETTING_GAP:    return "Para spacing";
+	case SETTING_HYPHEN: return "Hyphenation";
 	case SETTING_INDENT: return "Indent";
 	case SETTING_MARGIN: return "Hori. margin";
 	case SETTING_VMARGIN: return "Vert. margin";
@@ -87,6 +88,7 @@ void settings_value_text(const SettingsMenu *m, const Config *c, Setting s, char
 		snprintf(out, cap, "%s", c->footer == FOOTER_PAGE ? "Pages" : c->footer == FOOTER_PERCENT ? "Percent" : c->footer == FOOTER_NONE ? "Nothing" : "Both");
 		break;
 	case SETTING_VMARGIN: snprintf(out, cap, "%d px", config_vmargin_px(c)); break;
+	case SETTING_HYPHEN: snprintf(out, cap, "%s", c->hyphenation ? "On" : "Off"); break;
 	case SETTING_PREVIEW: snprintf(out, cap, "Press A"); break;
 	case SETTING_ABOUT:  snprintf(out, cap, "Press A"); break;
 	case SETTING_RESET:  snprintf(out, cap, "%s", m->confirm_reset ? "Sure? Press A" : "Press A"); break;
@@ -140,6 +142,10 @@ void settings_help(Setting s, const char **line1, const char **line2) {
 		*line1 = "Sample page, your settings.";
 		*line2 = "Any key goes back.";
 		break;
+	case SETTING_HYPHEN:
+		*line1 = "Hyphenate English words.";
+		*line2 = "Applies when a book opens.";
+		break;
 	case SETTING_ABOUT:
 		*line1 = "What DSLeaf is, its licence";
 		*line2 = "and the font notices.";
@@ -171,6 +177,7 @@ static void change(SettingsMenu *m, Config *c, Setting s, int delta) {
 	}
 	case SETTING_ORIENTATION: c->rotate = !c->rotate; break;
 	case SETTING_GAP:    c->paragraph_gap = (uint8_t)wrap(c->paragraph_gap, delta, CONFIG_GAP_MAX + 1); break;
+	case SETTING_HYPHEN: c->hyphenation = !c->hyphenation; break;
 	case SETTING_INDENT: c->paragraph_indent = (uint8_t)wrap(c->paragraph_indent, delta, CONFIG_INDENT_MAX + 1); break;
 	case SETTING_MARGIN: c->margin = (uint8_t)wrap(c->margin, delta, CONFIG_MARGIN_MAX + 1); break;
 	case SETTING_LINE:   c->line_spacing = (uint8_t)wrap(c->line_spacing, delta, CONFIG_LINE_MAX + 1); break;
