@@ -572,18 +572,24 @@ int main(void) {
 	input_init();
 	input_set_context(INPUT_MENU);
 
-	// The logo goes up on the bottom screen straight away (the top one is plain green), and the card and
-	// the settings load while it is showing (decisions 047 and 084). It later slides up onto the top screen.
+	// The screens are black while the card and the settings load, so that the logo comes up in the colours of the
+	// theme and not in one theme's colours first (decision 095). Then it goes up on the bottom screen (the top one is
+	// plain background colour), and it later slides up onto the top screen (decisions 047 and 084).
+	render_fade(SCREEN_TOP, -16);
+	render_fade(SCREEN_BOTTOM, -16);
 	irqSet(IRQ_VBLANK, count_vblank);
+	storage_init();
+	config_load(&config);
+	render_set_theme(config.theme);
 	render_logo_start();
 	top_logo = true; // it is on the top screen when the slide is over
+	render_fade(SCREEN_TOP, 0);
+	render_fade(SCREEN_BOTTOM, 0);
+	int logo_frame0 = vblanks;
 
-	storage_init();
 	cjk_load(); // the optional CJK font on the card (decision 092)
-	config_load(&config);
 	recent_load(&recent);
 	finished_load(finished_text, sizeof finished_text);
-	render_set_theme(config.theme);
 	rebuild_menu();
 
 	// Three seconds, or until a button or the touchscreen is pressed, then the logo slides up
@@ -594,7 +600,9 @@ int main(void) {
 		swiWaitForVBlank();
 		input_update();
 
-		render_fade(SCREEN_BOTTOM, startup_update(&startup, vblanks, input_any_pressed()));
+		// The time the card took counts towards the three seconds, up to two seconds of it.
+		int elapsed = vblanks - logo_frame0 + (logo_frame0 < 120 ? logo_frame0 : 120);
+		render_fade(SCREEN_BOTTOM, startup_update(&startup, elapsed, input_any_pressed()));
 		if (startup.phase == STARTUP_SLIDE || startup.slide_done) render_logo_slide(startup.slide);
 		if (startup.switch_now) {
 			render_logo_slide_end();

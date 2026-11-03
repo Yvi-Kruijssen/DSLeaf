@@ -30,6 +30,7 @@ static int bitmap_id[2];
 // themes, and the pixel numbers in logo_bin are added to 128.
 #define LOGO_PALETTE_BASE 128
 #define LOGO_COLOURS 64
+#define LOGO_PIXELS (THEME_COUNT * LOGO_COLOURS * 2) // logo_bin: a palette for each theme, then the pixels (decision 095)
 static bool logo[2];
 
 // The picture behind the menus: drawn into the same buffers as pixel text, with
@@ -248,9 +249,14 @@ void render_set_rotated(bool value) {
 
 bool render_is_rotated(void) { return rotated; }
 
+static void load_logo_palette(Screen screen);
+
 void render_set_theme(Theme value) {
 	theme = value < THEME_COUNT ? value : THEME_NORMAL;
 	if (palette[0]) apply_theme();
+	for (int s = 0; s < 2; s++) {
+		if (logo[s] && palette[s]) load_logo_palette((Screen)s); // a logo on show changes with the theme
+	}
 }
 
 Theme render_theme(void) { return theme; }
@@ -410,13 +416,18 @@ int render_backdrop_text_utf8(Screen screen, int x, int y, const char *text, Bac
 
 // ---- The startup logo ----
 
-void render_show_logo(Screen screen) {
-	// logo_bin: 64 palette entries of 2 bytes, then 256 x 192 colour numbers.
-	const u16 *entries = (const u16 *)logo_bin;
-	volatile u16 *pal = screen == SCREEN_TOP ? BG_PALETTE : BG_PALETTE_SUB;
-	for (int i = 0; i < LOGO_COLOURS; i++) pal[LOGO_PALETTE_BASE + i] = entries[i];
+// The colours of the logo for the current theme go into the palette of a screen (decision 095).
+static void load_logo_palette(Screen screen) {
+	const u16 *entries = (const u16 *)logo_bin + theme * LOGO_COLOURS;
+	for (int i = 0; i < LOGO_COLOURS; i++) palette[screen][LOGO_PALETTE_BASE + i] = entries[i];
+	if (logo_green) palette[screen][0] = entries[0]; // the background, for the start-up slide
+}
 
-	const u32 *src = (const u32 *)(logo_bin + LOGO_COLOURS * 2);
+void render_show_logo(Screen screen) {
+	// logo_bin: 64 palette entries of 2 bytes for each theme, then 256 x 192 colour numbers.
+	load_logo_palette(screen);
+
+	const u32 *src = (const u32 *)(logo_bin + LOGO_PIXELS);
 	volatile u32 *dst = (volatile u32 *)bitmap[screen];
 	for (int i = 0; i < PIX_W * PIX_H / 4; i++) {
 		dst[i] = src[i] + 0x80808080u; // four pixels at a time: every colour number is below 64
@@ -438,8 +449,8 @@ void render_logo_start(void) {
 	// What shows where the bitmap layer has nothing is colour 0. Make it the logo's own background
 	// green (the colour of its first pixel) so the screen above the logo, and what the logo leaves
 	// behind, is that green.
-	const u16 *entries = (const u16 *)logo_bin;
-	u16 green = entries[logo_bin[LOGO_COLOURS * 2]];
+	const u16 *entries = (const u16 *)logo_bin + theme * LOGO_COLOURS;
+	u16 green = entries[0]; // colour 0 is the background in every theme
 	logo_green = true;
 	for (int s = 0; s < 2; s++) {
 		palette[s][0] = green;

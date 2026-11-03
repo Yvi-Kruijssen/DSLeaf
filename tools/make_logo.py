@@ -7,10 +7,11 @@ Needs nothing but Python. The picture is drawn directly at 256x192, so every pix
 is deliberate: a chunky pixel art leaf, the name "DSLeaf" in the app's
 own font (font8x8, public domain, thickened and enlarged) and the tagline.
 
-The file is 64 colours of 2 bytes each (RGB555, little endian), then 256 x 192
-bytes of colour numbers from 0 to 63, row by row, with the background as 0. The
-app adds 128 to each number, because the first 64 palette entries belong to the
-text themes.
+The file is three palettes (normal, dark and sepia, in the order of the app's themes) of 64
+colours of 2 bytes each (RGB555, little endian), then 256 x 192 bytes of colour numbers from
+0 to 63, row by row, with the background as 0. The pixels are the same for every theme, only
+the colours differ (decision 095). The app adds 128 to each number, because the first 64
+palette entries belong to the text themes.
 """
 import math
 import re
@@ -32,15 +33,22 @@ LEAF = {
     "stem": 6.0,            # length of the stem
 }
 
-BG       = (24, 56, 48)       # the background
-CREAM    = (248, 248, 232)    # the name
-SHADOW   = (10, 28, 22)       # the shadow of the name
-TAGLINE  = (160, 208, 88)
-OUTLINE  = (12, 36, 28)       # the outline of the leaf
-LEAF_LT  = (140, 204, 66)     # the lit side of the leaf
-LEAF_MID = (92, 172, 62)      # the side in shade
-LEAF_DK  = (50, 138, 54)      # its darker edge, and the stem
-LEAF_RIB = (28, 96, 46)       # the midrib
+# The colours have roles; each theme gives each role a colour (decision 095).
+BG, CREAM, SHADOW, TAGLINE, OUTLINE, LEAF_LT, LEAF_MID, LEAF_DK, LEAF_RIB = range(9)
+THEMES = {
+    "normal": {   # the dark green of the first logo
+        BG: (24, 56, 48), CREAM: (248, 248, 232), SHADOW: (10, 28, 22), TAGLINE: (160, 208, 88),
+        OUTLINE: (12, 36, 28), LEAF_LT: (140, 204, 66), LEAF_MID: (92, 172, 62), LEAF_DK: (50, 138, 54), LEAF_RIB: (28, 96, 46),
+    },
+    "dark": {     # black, a light grey name and the green kept for the leaf and the tagline (decision 064)
+        BG: (0, 0, 0), CREAM: (232, 232, 232), SHADOW: (44, 44, 44), TAGLINE: (160, 208, 88),
+        OUTLINE: (8, 30, 14), LEAF_LT: (140, 204, 66), LEAF_MID: (92, 172, 62), LEAF_DK: (50, 138, 54), LEAF_RIB: (28, 96, 46),
+    },
+    "sepia": {    # dark brown, and the leaf and the tagline in tan and brown (decision 078)
+        BG: (56, 32, 16), CREAM: (252, 240, 212), SHADOW: (28, 16, 8), TAGLINE: (212, 168, 104),
+        OUTLINE: (30, 17, 8), LEAF_LT: (214, 164, 92), LEAF_MID: (170, 120, 60), LEAF_DK: (124, 82, 40), LEAF_RIB: (88, 55, 26),
+    },
+}
 
 def load_font8x8():
     """The 128 ASCII glyphs of font8x8: 8 bytes each, bit 0 is the leftmost pixel."""
@@ -52,7 +60,7 @@ def load_font8x8():
 
 class Canvas:
     def __init__(self):
-        self.px = [[BG] * W for _ in range(H)]
+        self.px = [[BG] * W for _ in range(H)]   # roles, not colours
 
     def dot(self, x, y, colour):
         if 0 <= x < W and 0 <= y < H:
@@ -186,32 +194,28 @@ def build():
     return c
 
 def write(c, path):
-    palette = [BG]
-    index = {BG: 0}
     out = bytearray()
     for row in c.px:
-        for rgb in row:
-            if rgb not in index:
-                if len(palette) >= 64:
-                    sys.exit("more than 64 colours")
-                index[rgb] = len(palette)
-                palette.append(rgb)
-            out.append(index[rgb])
+        out += bytes(row)               # the role numbers are the colour numbers, in every theme
     pal = bytearray()
-    for r, g, b in palette + [(0, 0, 0)] * (64 - len(palette)):
-        pal += ((r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)).to_bytes(2, "little")
+    for name in ("normal", "dark", "sepia"):
+        colours = [THEMES[name][r] for r in range(9)] + [(0, 0, 0)] * (64 - 9)
+        for r, g, b in colours:
+            pal += ((r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10)).to_bytes(2, "little")
     Path(path).write_bytes(bytes(pal) + bytes(out))
-    return len(palette)
+    return 9
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     canvas = build()
     n = write(canvas, sys.argv[1])
-    print(f"wrote {sys.argv[1]}: {n} colours, {64 * 2 + W * H} bytes")
-    if len(sys.argv) > 2:
-        data = bytearray(b"P6\n%d %d\n255\n" % (W, H))
-        for row in canvas.px:
-            for rgb in row:
-                data += bytes(rgb)
-        Path(sys.argv[2]).write_bytes(bytes(data))
+    print(f"wrote {sys.argv[1]}: {n} colours in 3 palettes, {3 * 64 * 2 + W * H} bytes")
+    if len(sys.argv) > 2:       # preview.ppm gives preview_normal.ppm, preview_dark.ppm and preview_sepia.ppm
+        stem = sys.argv[2][:-4] if sys.argv[2].endswith(".ppm") else sys.argv[2]
+        for name in THEMES:
+            data = bytearray(b"P6\n%d %d\n255\n" % (W, H))
+            for row in canvas.px:
+                for role in row:
+                    data += bytes(THEMES[name][role])
+            Path(f"{stem}_{name}.ppm").write_bytes(bytes(data))
