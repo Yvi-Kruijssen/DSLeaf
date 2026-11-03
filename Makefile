@@ -154,7 +154,7 @@ else
   endif
 endif
 
-.PHONY: $(BUILD) clean
+.PHONY: $(BUILD) clean test
 
 #---------------------------------------------------------------------------------
 $(BUILD):
@@ -162,6 +162,10 @@ $(BUILD):
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 #---------------------------------------------------------------------------------
+# Runs the host tests. They are private (docs/tests is not in the repository), so this only works where they are.
+test:
+	@if [ -x docs/tests/run_tests.sh ]; then docs/tests/run_tests.sh; else echo "The tests are not in this copy of the project (docs/tests)."; fi
+
 clean:
 	@echo clean ...
 	@rm -fr $(BUILD) $(TARGET).elf $(TARGET).nds $(SOUNDBANK)
