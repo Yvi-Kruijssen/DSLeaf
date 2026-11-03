@@ -28,4 +28,10 @@ int text_utf8_next(const char **s, uint8_t out[3]);
 // text_utf8_next always does (the menus use that one).
 int text_utf8_next_ext(const char **s, Glyph out[3], int scripts);
 
+// How many Chinese, Japanese or Korean characters were turned into `?` since the last reset, because the font in use has no
+// CJK glyphs (no .dslc file, or a font it does not fit). The reader resets it just before opening a book and looks at it
+// afterwards, to say that a font is missing (decision 105). The menus count too.
+unsigned text_cjk_missed(void);
+void text_cjk_missed_reset(void);
+
 #endif

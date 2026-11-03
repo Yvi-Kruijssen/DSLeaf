@@ -59,6 +59,17 @@ For real hardware, copy `DSLeaf.nds` to the SD card of your flashcart.
 
 Put your `.epub` and `.txt` files in a `Books` folder at the root of the SD card (subfolders are fine, up to 6 deep). DSLeaf stores its own files (settings, bookmarks, extra fonts) in a `DSLeaf` folder on the same card. The default reading font is the 6x12 font built into the program (a converted copy of Terminus 6x12, see the licences below); the 8x8 font is built in too. To use another font, put a `.fnt` file in `DSLeaf/Fonts` (8x8, 8x16 or other sizes such as 6x12, made with `tools/bdf2fnt.py`) and pick it in Settings.
 
+### Chinese, Japanese and Korean
+
+The CJK font is not part of the program (it would double its size), so it is a file you add to the card:
+
+1. Make a `.dslc` file with `tools/bdf2cjk.py` from BDF or PCF bitmap fonts that have the characters, at **12 pixels** so that it fits the built-in 6x12 font (for example a 12 pixel WenQuanYi bitmap font for Chinese and Japanese, Galmuri11 for Korean and GNU Unifont to fill the gaps). Examples are at the top of the script. Check the licence of the fonts you use.
+2. Copy the file to `DSLeaf/Fonts` on the SD card (the first `.dslc` in name order is used).
+3. **Restart DSLeaf.** The file is read when the program starts.
+4. Choose the **Built-in 6x12** font in Settings. The 8x8 font and the other fonts cannot draw these characters.
+
+Without the file, Chinese, Japanese and Korean text shows as `?`, and a book in one of these languages says "No CJK font, see README" in the status row when it is opened. With the file but another font it says "CJK needs the 6x12 font". Menus, the Library and the contents always use the 8x8 font and show `?` for these characters.
+
 ## Licence
 
 DSLeaf is released under the [MIT licence](LICENSE). Third-party parts keep their own licences:

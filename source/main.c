@@ -1,6 +1,7 @@
 // DSLeaf: the startup logo, then the main menu, Library, Settings and the reader.
 #include <nds.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "about.h"
 #include "bookmark_menu.h"
@@ -24,6 +25,7 @@
 #include "startup.h"
 #include "storage.h"
 #include "toc.h"
+#include "txtbook.h"
 
 typedef enum { SCREEN_MAIN_MENU, SCREEN_LIBRARY, SCREEN_READER, SCREEN_SETTINGS, SCREEN_PREVIEW, SCREEN_ABOUT } AppScreen;
 
@@ -137,6 +139,18 @@ static void mark_finished_if_at_end(void) {
 
 static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 
+// A book in Chinese, Japanese or Korean, with no CJK font that fits the reading font, would show only `?`: say what to do.
+// The book is known by its language (EPUB), its encoding (old CJK text files) or by the characters of its first pages.
+static void cjk_font_notice(Reader *r) {
+	if (font_scripts(&reading_font) & SCRIPT_CJK) return;
+	const char *lang = r->book.lang;
+	TxtEncoding enc = txt_encoding(&r->book);
+	bool cjk = text_cjk_missed() > 0 || strncmp(lang, "zh", 2) == 0 || strncmp(lang, "ja", 2) == 0 || strncmp(lang, "ko", 2) == 0 ||
+	           enc == TXT_GBK || enc == TXT_BIG5 || enc == TXT_SJIS || enc == TXT_EUCKR;
+	if (!cjk) return;
+	reader_set_notice(r, cjk_loaded() ? "CJK needs the 6x12 font" : "No CJK font, see README");
+}
+
 // Opens a book and starts reading it. Returns true if it worked. On failure an
 // error box is shown.
 static bool open_book(const char *path) {
@@ -155,6 +169,7 @@ static bool open_book(const char *path) {
 	bool known = bookmarks_load(path, book_id, &marks);
 	bool resume = known && marks.has_last;
 
+	text_cjk_missed_reset();
 	EpubResult result = reader_open(&reader, path, resume ? marks.last_chapter : 0, resume ? marks.last_offset : 0,
 	                                cols, rows, dual_screen() ? 2 : 1, &style);
 	if (result != EPUB_OK) {
@@ -174,6 +189,7 @@ static bool open_book(const char *path) {
 	turns_unsaved = 0;
 	bm_open = false;
 	if (resume && (marks.last_chapter > 0 || marks.last_offset > 0)) reader_set_notice(&reader, "Resumed");
+	cjk_font_notice(&reader); // a book that needs a CJK font the font in use does not have (decision 105)
 	if (dual_screen()) hide_top_logo(); // the top screen shows the second page
 	render_set_view(&reading_font, config.rotate); // also clears both screens. Menus are never rotated (decision 049)
 

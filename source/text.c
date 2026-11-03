@@ -4,6 +4,11 @@
 #include "font_ext.h"
 #include "translit.h"
 
+static unsigned cjk_missed; // wide characters turned into ? because the font cannot draw them (decision 105)
+
+unsigned text_cjk_missed(void) { return cjk_missed; }
+void text_cjk_missed_reset(void) { cjk_missed = 0; }
+
 static int one(Glyph out[3], Glyph a) {
 	out[0] = a;
 	return 1;
@@ -113,6 +118,7 @@ static int map_codepoint(uint32_t cp, Glyph out[3], int scripts) {
 		out[1] = GLYPH_FILL;
 		return 2;
 	}
+	if (cp != 0x3000 && !(scripts & SCRIPT_CJK) && cjk_is_wide(cp)) cjk_missed++; // shown as ?, see text_cjk_missed
 	if (cp == 0x3000) return one(out, ' ');                          // ideographic space
 	if (cp >= 0xFF01 && cp <= 0xFF5E) return one(out, (Glyph)(cp - 0xFEE0)); // fullwidth ASCII (decision 091)
 	if (cp >= 0x370 && cp <= 0x4FF) { // Greek and Cyrillic: the font's own letters if it has them, otherwise Latin letters
