@@ -322,37 +322,11 @@ static void update_library(uint32_t actions, bool tapped, int x, int y) {
 	}
 }
 
-// The book page of each entry of the contents, shown in the Contents tab when the pages of the book are counted
-// (decision 089). 0 is not worked out yet and -1 is nothing to show. Only the rows in view are worked out, a
-// chapter at a time, and kept until the book is closed.
-static int toc_pages[TOC_ENTRIES_MAX];
-
-static void fill_toc_pages(void) {
-	if (!reader_book_pages_exact(&reader)) return;
-	int last = toc_menu.top + bookmark_menu_visible();
-	if (last > toc.count) last = toc.count;
-	for (int c = toc_menu.top; c < last; c++) {
-		if (toc_pages[c] != 0) continue;
-		int chapter = toc.entry[c].chapter;
-		toc_resolve(&toc, &reader.book, chapter);
-		uint32_t offsets[16];
-		int index[16], out[16], n = 0;
-		for (int k = c; k < last && n < 16; k++) {
-			if (toc.entry[k].chapter != chapter || toc_pages[k] != 0) continue;
-			offsets[n] = toc.entry[k].offset == TOC_OFFSET_UNKNOWN ? 0 : toc.entry[k].offset;
-			index[n++] = k;
-		}
-		reader_pages_of(&reader, chapter, offsets, n, out);
-		for (int i = 0; i < n; i++) toc_pages[index[i]] = out[i] > 0 ? out[i] : -1;
-	}
-}
-
 // Reads the table of contents the first time it is needed, which can take a moment for a big one.
 static void ensure_toc(void) {
 	if (toc_tried) return;
 	toc_tried = true;
 	toc_load(&toc, &reader.book);
-	memset(toc_pages, 0, sizeof toc_pages);
 }
 
 static void close_reading_menu(void) {
@@ -672,7 +646,7 @@ int main(void) {
 			else if (reader_draw(&reader, dual_screen(), &marks, config.footer) && bm_open) {
 				bool with_page = reader_book_pages_exact(&reader);
 				if (menu_tab == TAB_PAGE) page_menu_draw(&page_menu, reader_book_page(&reader, 0), marks.count, SCREEN_BOTTOM);
-				else if (menu_tab == TAB_CONTENTS) { fill_toc_pages(); toc_menu_draw(&toc_menu, &toc, toc_here, toc_pages, with_page, SCREEN_BOTTOM); }
+				else if (menu_tab == TAB_CONTENTS) toc_menu_draw(&toc_menu, &toc, toc_here, NULL, with_page, SCREEN_BOTTOM);
 				else bookmark_menu_draw(&bm_menu, &marks, reader.first_chapter, bm_pages, with_page, SCREEN_BOTTOM);
 				bm_menu.changed = false;
 				page_menu.changed = false;
