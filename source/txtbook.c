@@ -9,6 +9,7 @@
 #include "mbcs.h"
 #include "storage.h"
 #include "textx.h"
+#include "txtindex.h"
 
 #define CHAPTER_MIN_BYTES 1500  // a heading with less than this after it is not a chapter (a list of chapters)
 #define CHAPTER_FIRST_MIN 400   // a heading this close to the start is the start of the first chapter
@@ -721,6 +722,47 @@ static bool detect_wide(const uint8_t *p, size_t n, TxtEncoding *out) {
 	return false;
 }
 
+// The title is the file name without the ending, and the end of opening a book.
+static void set_title(Epub *book, const char *path) {
+	const char *name = strrchr(path, '/');
+	name = name ? name + 1 : path;
+	size_t len = strlen(name);
+	if (len > 4) len -= 4;
+	if (len >= sizeof book->title) len = sizeof book->title - 1;
+	memcpy(book->title, name, len);
+	book->title[len] = '\0';
+}
+
+// A book whose chapter list was saved (decision 104): no pass over the file.
+static EpubResult open_from_index(Epub *book, const char *path, const TxtIndex *ix) {
+	struct TxtBook *t = calloc(1, sizeof *t);
+	if (!t) return EPUB_ERR_MEMORY;
+	t->start = malloc(sizeof *t->start * (TXT_CHAPTERS_MAX + 2));
+	book->chapter_size = malloc(sizeof *book->chapter_size * (TXT_CHAPTERS_MAX + 1));
+	book->chapter = calloc((size_t)TXT_CHAPTERS_MAX + 1, sizeof *book->chapter);
+	if (!t->start || !book->chapter_size || !book->chapter) {
+		free(t->start);
+		free(book->chapter_size);
+		free(book->chapter);
+		book->chapter_size = NULL;
+		book->chapter = NULL;
+		free(t);
+		return EPUB_ERR_MEMORY;
+	}
+	snprintf(t->path, sizeof t->path, "%s", path);
+	t->encoding = (TxtEncoding)ix->encoding;
+	t->data_start = ix->data_start;
+	t->file_size = ix->data_end;
+	t->line_mode = ix->line_mode;
+	for (int i = 0; i <= ix->count; i++) t->start[i] = ix->start[i];
+	for (int i = 0; i < ix->count; i++) book->chapter_size[i] = t->start[i + 1] - t->start[i];
+	book->chapter_count = ix->count;
+	if (ix->english) snprintf(book->lang, sizeof book->lang, "en");
+	book->txt = t;
+	set_title(book, path);
+	return EPUB_OK;
+}
+
 EpubResult txt_open(Epub *book, const char *path) {
 	memset(book, 0, sizeof *book);
 	FILE *f = storage_fopen(path, "rb");
@@ -735,6 +777,14 @@ EpubResult txt_open(Epub *book, const char *path) {
 		return size == 0 ? EPUB_ERR_NO_CHAPTERS : EPUB_ERR_READ;
 	}
 	rewind(f);
+
+	// A big book whose chapters were found before is opened from the saved list (decision 104).
+	static TxtIndex saved_index;
+	if (size >= TXTINDEX_MIN_BOOK && txtindex_load(path, (uint32_t)size, &saved_index) && saved_index.encoding <= (int)TXT_EUCKR &&
+	    saved_index.count <= TXT_CHAPTERS_MAX) {
+		fclose(f);
+		return open_from_index(book, path, &saved_index);
+	}
 
 	// The encoding, from the byte order mark or the first bytes.
 	static uint8_t head[4096];
@@ -897,14 +947,17 @@ EpubResult txt_open(Epub *book, const char *path) {
 	if (english) snprintf(book->lang, sizeof book->lang, "en");
 	book->txt = t;
 
-	// The title is the file name without the ending.
-	const char *name = strrchr(path, '/');
-	name = name ? name + 1 : path;
-	size_t len = strlen(name);
-	if (len > 4) len -= 4;
-	if (len >= sizeof book->title) len = sizeof book->title - 1;
-	memcpy(book->title, name, len);
-	book->title[len] = '\0';
+	if (size >= TXTINDEX_MIN_BOOK) { // keep what the pass found, so the next opening skips it
+		saved_index.encoding = (int)t->encoding;
+		saved_index.data_start = t->data_start;
+		saved_index.data_end = t->file_size;
+		saved_index.line_mode = t->line_mode;
+		saved_index.english = english;
+		saved_index.count = count;
+		for (int i = 0; i <= count; i++) saved_index.start[i] = t->start[i];
+		txtindex_save(path, (uint32_t)size, &saved_index);
+	}
+	set_title(book, path);
 	return EPUB_OK;
 }
 
