@@ -23,7 +23,8 @@
 typedef struct {
 	char name[LIBRARY_NAME_MAX]; // file name with its ending, or the name of a folder
 	bool is_dir;
-	bool failed;                 // could not be opened earlier in this session
+	bool failed;
+	bool done;                   // the book has been read to the end (finished.h, decision 086)                 // could not be opened earlier in this session
 } LibraryEntry;
 
 typedef struct {
@@ -41,6 +42,7 @@ typedef enum {
 	LIBRARY_EVENT_NONE,
 	LIBRARY_EVENT_BACK,
 	LIBRARY_EVENT_OPEN, // `index` is the entry to open
+	LIBRARY_EVENT_TOGGLE_DONE, // Select on a book: `index` is the book to mark as read, or to take the mark off
 } LibraryEventKind;
 
 typedef struct {
@@ -53,6 +55,13 @@ typedef struct {
 // each sorted by title, ignoring case. Books that failed earlier keep their error mark.
 // Returns false if the folder could not be read (the list is then empty).
 bool library_scan(Library *lib);
+
+// Reads the folder shown again (after a book was read, for example), keeping the folder and the selected
+// entry. Falls back to /Books if the folder is gone. Returns false if nothing could be read.
+bool library_rescan(Library *lib);
+
+// Sets the read marks from the text of the list of finished books (finished.h).
+void library_apply_finished(Library *lib, const char *text);
 
 // Goes into the folder at `index` (does nothing for a book), or up to the parent folder, which
 // is selected in the list. Both read the folder again. library_up returns false at /Books.

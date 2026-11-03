@@ -8,6 +8,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "finished.h"
 #include "input.h"
 #include "storage.h"
 
@@ -85,6 +86,7 @@ static bool visit(const char *name, bool is_dir, void *user) {
 	LibraryEntry *e = &lib->entry[lib->count++];
 	memcpy(e->name, name, name_len + 1);
 	e->is_dir = is_dir;
+	e->done = false;
 	char key[LIBRARY_DIR_MAX + LIBRARY_NAME_MAX];
 	failed_key(lib, name, key, sizeof key);
 	e->failed = !is_dir && failed_find(key) >= 0;
@@ -115,6 +117,41 @@ bool library_scan(Library *lib) {
 }
 
 static void select_entry(Library *lib, int index);
+
+bool library_rescan(Library *lib) {
+	char name[LIBRARY_NAME_MAX] = "";
+	bool was_dir = false;
+	if (lib->selected >= 0 && lib->selected < lib->count) {
+		snprintf(name, sizeof name, "%s", lib->entry[lib->selected].name);
+		was_dir = lib->entry[lib->selected].is_dir;
+	}
+	bool ok = scan_dir(lib);
+	if (!ok && lib->dir[0]) { // the folder is gone
+		lib->dir[0] = '\0';
+		ok = scan_dir(lib);
+	}
+	for (int i = 0; i < lib->count && name[0]; i++) {
+		if (lib->entry[i].is_dir == was_dir && strcmp(lib->entry[i].name, name) == 0) {
+			select_entry(lib, i);
+			break;
+		}
+	}
+	return ok;
+}
+
+void library_apply_finished(Library *lib, const char *text) {
+	for (int i = 0; i < lib->count; i++) {
+		LibraryEntry *e = &lib->entry[i];
+		if (e->is_dir) {
+			e->done = false;
+			continue;
+		}
+		char path[LIBRARY_DIR_MAX + LIBRARY_NAME_MAX + 16];
+		library_path(lib, i, path, sizeof path);
+		e->done = finished_has(text, path);
+	}
+	lib->redraw = true;
+}
 
 bool library_enter(Library *lib, int index) {
 	if (index < 0 || index >= lib->count || !lib->entry[index].is_dir) return false;
@@ -203,6 +240,7 @@ static LibraryEvent open_entry(Library *lib, int index) {
 
 LibraryEvent library_update(Library *lib, uint32_t actions, bool tapped, int tap_x, int tap_y) {
 	(void)tap_x; // rows are all that matters, the list spans the full width
+	if ((actions & ACT_REMOVE) && lib->count > 0 && !lib->entry[lib->selected].is_dir) return event(LIBRARY_EVENT_TOGGLE_DONE, lib->selected);
 	if (actions & ACT_BACK) {
 		if (library_up(lib)) return event(LIBRARY_EVENT_NONE, 0);
 		return event(LIBRARY_EVENT_BACK, 0);

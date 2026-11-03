@@ -7,6 +7,7 @@
 #include "bookmarks.h"
 #include "config.h"
 #include "epub.h"
+#include "finished.h"
 #include "input.h"
 #include "library.h"
 #include "main_menu.h"
@@ -114,6 +115,25 @@ static MarkPage mark_cache[BOOKMARKS_MAX];
 static int mark_cache_count, mark_cache_next;
 static int bm_pages[BOOKMARKS_MAX]; // for the marks as listed, 0 when not known
 
+// The books that have been read to the end (decision 086), as the text of finished.txt.
+static char finished_text[FINISHED_CAP];
+static bool book_finished; // the open book is in the list
+static int checked_chapter = -1; // the place last looked at
+static uint32_t checked_offset;
+
+static void mark_finished_if_at_end(void) {
+	// Only looked at when the place changes: finding out whether later chapters have anything can open them.
+	if (book_finished) return;
+	uint32_t offset = reader_offset(&reader);
+	if (reader_chapter(&reader) == checked_chapter && offset == checked_offset) return;
+	checked_chapter = reader_chapter(&reader);
+	checked_offset = offset;
+	if (!reader_at_end(&reader)) return;
+	book_finished = true;
+	if (finished_add(finished_text, sizeof finished_text, book_path)) finished_save(finished_text);
+	reader_set_notice(&reader, "Finished");
+}
+
 static bool dual_screen(void) { return config.display == DISPLAY_DUAL; }
 
 // Opens a book and starts reading it. Returns true if it worked. On failure an
@@ -144,6 +164,8 @@ static bool open_book(const char *path) {
 	toc_tried = false;
 	mark_cache_count = mark_cache_next = 0; // other layout, other book
 	snprintf(book_path, sizeof book_path, "%s", path);
+	book_finished = finished_has(finished_text, path);
+	checked_chapter = -1; // a new book: the place is looked at again
 	book_size = book_id;
 	load_page_counts();
 	idle_frames = 0;
@@ -245,7 +267,8 @@ static void show_about(void) {
 }
 
 static void show_library(void) {
-	library_scan(&library);
+	library_rescan(&library); // the folder and the selection stay as they were (decision 086)
+	library_apply_finished(&library, finished_text);
 	current = SCREEN_LIBRARY;
 }
 
@@ -285,6 +308,16 @@ static void update_library(uint32_t actions, bool tapped, int x, int y) {
 
 		bool ok = open_book(path);
 		library_set_failed(&library, e.index, !ok);
+	} else if (e.kind == LIBRARY_EVENT_TOGGLE_DONE) {
+		// Select marks a book as read, or takes the mark off (decision 086).
+		char path[RECENT_PATH_MAX];
+		library_path(&library, e.index, path, sizeof path);
+		LibraryEntry *entry = &library.entry[e.index];
+		if (entry->done) finished_remove(finished_text, path);
+		else finished_add(finished_text, sizeof finished_text, path);
+		entry->done = !entry->done;
+		library.redraw = true;
+		save_failed = !finished_save(finished_text);
 	}
 }
 
@@ -484,6 +517,7 @@ static void update_reader(uint32_t actions, bool tapped, int tap_x, int tap_y) {
 		if (reader_toggle_bookmark(&reader, &marks) != TOGGLE_FULL) save_position();
 	}
 	if (actions & ACT_BOOKMARK_MENU) open_reading_menu(menu_tab);
+	mark_finished_if_at_end();
 
 	if (actions & ACT_INVERT) {
 		// B cycles through the themes: normal, dark, sepia (decision 042).
@@ -520,6 +554,7 @@ int main(void) {
 	storage_init();
 	config_load(&config);
 	recent_load(&recent);
+	finished_load(finished_text, sizeof finished_text);
 	render_set_theme(config.theme);
 	rebuild_menu();
 

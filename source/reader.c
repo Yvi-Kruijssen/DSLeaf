@@ -575,6 +575,12 @@ bool reader_count_step(Reader *r) {
 	return true;
 }
 
+bool reader_at_end(Reader *r) {
+	if (!r->open || ct_has_next(&r->text) || r->page_count == 0) return false;
+	if (r->page + r->per_view < r->page_count) return false;     // more pages in this window
+	return find_chapter(r, r->chapter, 1) < 0;                   // and no later chapter with anything in it
+}
+
 int reader_page_of(Reader *r, int chapter, uint32_t offset) {
 	if (!r->open || !reader_book_pages_exact(r) || chapter < 0 || chapter >= r->book.chapter_count) return 0;
 	uint32_t before = 0;

@@ -155,6 +155,10 @@ bool reader_count_step(Reader *r);
 // read. Lays out the chapter up to the offset, so it takes about as long as counting that chapter (decision 081).
 int reader_page_of(Reader *r, int chapter, uint32_t offset);
 
+// True when the last page of the whole book is on the screen (the last page of the last window of the last
+// chapter that has text or pictures). Used to mark a book as read (decision 086).
+bool reader_at_end(Reader *r);
+
 // Goes to page `page` of the whole book (clamped to 1 .. total). Only works when the page
 // counts are exact (reader_book_pages_exact), otherwise it returns false and does nothing.
 // In a view of two pages the page may be the second one of the view (decision 057).

@@ -12,7 +12,7 @@ DSLeaf is an EPUB e-reader for the Nintendo DS, written in C with devkitARM and 
 - **Pictures in EPUBs** (PNG and baseline JPEG): each picture is a page of its own, shrunk to fit and dithered, with the last few kept so turning back is quick. Small ornaments and thin strips are left out.
 - **Settings screen** for the screen mode, colour theme, font, line spacing, orientation, paragraph spacing, indent, margins (sides, and above and below for a glass screen protector) and what the reading footer shows ("Book progress": pages, percent, both or nothing), with a **sample page preview**, **Reset all** and an **About** screen with the licences. Changes are saved at once, and the screen works with touch as well as buttons.
 - **Main menu** with a "Recent Reads" list (3 books), plus Open, Library and Settings buttons.
-- **Library** listing the EPUB and text books in your `Books` folder, sorted alphabetically, with support for subfolders.
+- **Library** listing the EPUB and text books in your `Books` folder, sorted alphabetically, with subfolders. It remembers where you were, and books you have read to the end get a check mark (Select marks or unmarks one by hand).
 - **Dual-screen and single-screen modes**, chosen in Settings. Single-screen mode draws everything on the bottom screen.
 - **One page per screen**: two pages at once in dual-screen mode, one page in single-screen mode.
 - **Rotated reading mode** for holding the device sideways like a book.
