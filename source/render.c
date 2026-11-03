@@ -261,8 +261,9 @@ static int safe_rows(void) { return font ? font_safe_tile_rows(font) : 0; }
 int render_cols(void) { return pixel ? pix_cols(font, rotated) : (rotated ? 24 - 2 * safe_rows() : 32); }
 int render_rows(void) { return pixel ? pix_rows(font, rotated) : (rotated ? 32 : 24 - 2 * safe_rows()) / tiles_per_glyph(); }
 
-void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
+void render_putc(Screen screen, int col, int row, Glyph glyph, Style style) {
 	if (col < 0 || col >= render_cols() || row < 0 || row >= render_rows()) return;
+	if (glyph == GLYPH_FILL) return;
 
 	if (pixel) {
 		pix_draw_glyph(fb[screen], font, rotated, col, row, glyph, (uint8_t)(style * 16 + 1));
@@ -270,6 +271,7 @@ void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style) {
 		return;
 	}
 
+	if (glyph >= FONT_GLYPHS) glyph = '?'; // the tile fonts have Latin-1 only
 	int per = tiles_per_glyph();
 	u16 tile = (u16)(glyph * per) | (u16)(style << 12);
 

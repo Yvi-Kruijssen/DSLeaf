@@ -155,6 +155,10 @@ bool reader_count_step(Reader *r);
 // read. Lays out the chapter up to the offset, so it takes about as long as counting that chapter (decision 081).
 int reader_page_of(Reader *r, int chapter, uint32_t offset);
 
+// The same for several places of one chapter in a single pass (the entries of the contents, decision 089): out[i] is the
+// page of offsets[i], or 0 when it cannot be known. Returns false if nothing could be worked out.
+bool reader_pages_of(Reader *r, int chapter, const uint32_t *offsets, int n, int *out);
+
 // True when the last page of the whole book is on the screen (the last page of the last window of the last
 // chapter that has text or pictures). Used to mark a book as read (decision 086).
 bool reader_at_end(Reader *r);

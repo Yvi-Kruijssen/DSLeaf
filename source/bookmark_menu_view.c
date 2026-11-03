@@ -170,9 +170,12 @@ static void scrollbar(Screen screen, const PopupGeometry *g, int count, int top,
 }
 
 // One row of a list: the selected one has a bar and the green text.
-static void row(Screen screen, const PopupGeometry *g, int i, bool selected, bool here, int indent, const char *text) {
+static void row(Screen screen, const PopupGeometry *g, int i, bool selected, bool here, int indent, const char *text, int page) {
 	int y = g->y + g->list_y + i * POPUP_ROW_H;
 	int text_w = g->w - 14 - 14 - indent;
+	int page_w = 0;
+	if (page > 0) page_w = (int)strlen("0") * 8 * (page >= 10000 ? 5 : page >= 1000 ? 4 : page >= 100 ? 3 : page >= 10 ? 2 : 1);
+	text_w -= page_w ? page_w + 6 : 0; // the title keeps clear of the page number
 	if (selected) {
 		render_backdrop_rect(screen, g->x + 4, y, g->w - 12, POPUP_ROW_H, BD_RULE);
 		render_backdrop_rect(screen, g->x + 4, y, 3, POPUP_ROW_H, BD_ACCENT);
@@ -180,6 +183,11 @@ static void row(Screen screen, const PopupGeometry *g, int i, bool selected, boo
 		render_backdrop_rect(screen, g->x + 9, y + 6, 4, 4, BD_ACCENT); // where you are in the book
 	}
 	render_backdrop_text_utf8(screen, g->x + 14 + indent, y + 4, text, selected ? BD_ACCENT : BD_BTN_TEXT, text_w);
+	if (page > 0) { // the page number at the right, after the selection bar is drawn (decision 089)
+		char num[12];
+		snprintf(num, sizeof num, "%d", page);
+		render_backdrop_text(screen, g->x + g->w - 14 - page_w, y + 4, num, selected ? BD_ACCENT : BD_BTN_DIM);
+	}
 }
 
 static void empty_message(Screen screen, const PopupGeometry *g, const char *l1, const char *l2) {
@@ -213,13 +221,12 @@ void bookmark_menu_draw(const BookmarkMenu *m, const BookMarks *marks, int first
 			int chapter = (int)k->chapter - first_chapter + 1; // the pages are not counted yet
 			snprintf(line, sizeof line, "Ch %d %s", chapter < 1 ? 1 : chapter, text);
 		}
-		row(screen, &g, i, index == m->selected, false, 0, line);
+		row(screen, &g, i, index == m->selected, false, 0, line, 0);
 	}
 	scrollbar(screen, &g, marks->count, m->top, g.rows);
 }
 
-void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_count, bool with_page, Screen screen) {
-	(void)bookmark_count;
+void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, const int *pages, bool with_page, Screen screen) {
 	int count = toc ? toc->count : 0;
 	char pos[24];
 	position_text(pos, sizeof pos, m->selected, count);
@@ -234,7 +241,7 @@ void toc_menu_draw(const ListMenu *m, const Toc *toc, int here, int bookmark_cou
 		if (index >= count) break;
 		const TocEntry *e = &toc->entry[index];
 		int level = e->level > 2 ? 2 : e->level; // at most two levels deep
-		row(screen, &g, i, index == m->selected, index == here, level * 8, e->title);
+		row(screen, &g, i, index == m->selected, index == here, level * 8, e->title, pages ? pages[index] : 0);
 	}
 	scrollbar(screen, &g, count, m->top, g.rows);
 }

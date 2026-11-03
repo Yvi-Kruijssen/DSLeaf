@@ -11,7 +11,10 @@
 
 bool font_load_named(Font *font, const char *name) {
 	if (strcmp(name, FONT_NAME_6X12) == 0) {
-		if (font_from_bytes(font, font_6x12_data, (size_t)font_6x12_size)) return true; // built into the program
+		if (font_from_bytes(font, font_6x12_data, (size_t)font_6x12_size)) {
+			font->has_ext = true; // with the Greek and Cyrillic letters of font_6x12_ext.c (decision 091)
+			return true;      // built into the program
+		}
 	} else if (strcmp(name, FONT_NAME_8X8) != 0) {
 		char path[160];
 		uint8_t data[FONT_FILE_MAX + 1]; // one byte more than a font can be, to notice a file that is too big

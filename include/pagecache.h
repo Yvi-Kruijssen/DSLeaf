@@ -29,6 +29,7 @@
 
 typedef struct {
 	int cols, rows, gap, indent;
+	int scripts; // what the font can draw (text.h): the other letters are written in Latin letters, so the pages differ (decision 091)
 } PageLayout;
 
 // Finds the book's section in `text` and, if it has this layout and `count`

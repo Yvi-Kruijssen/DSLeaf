@@ -15,6 +15,9 @@ typedef enum {
 	TXT_LATIN1,  // Windows-1252, which is Latin-1 with printable characters at 0x80 to 0x9F
 	TXT_UTF16LE,
 	TXT_UTF16BE,
+	TXT_CP1250,      // Windows-1250 (Central European)
+	TXT_ISO8859_2,   // ISO-8859-2 (Central European)
+	TXT_ISO8859_15,  // ISO-8859-15 (Latin-1 with the euro and a few French and Finnish letters)
 } TxtEncoding;
 
 // Reads characters (code points) from a byte range of a file, decoding the encoding.

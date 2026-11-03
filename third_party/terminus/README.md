@@ -15,3 +15,7 @@ DSLeaf includes a converted copy of **Terminus Font** (regular weight, 6x12: `te
   this folder's `OFL.txt` (or the same notice and licence in another form the user can easily read). The font may not be sold by itself.
 - **Rebuilding it:** download Terminus Font 4.49.1, then
   `python3 -I tools/bdf2fnt.py ter-u12n.bdf font6x12.fnt` and `python3 -I tools/fnt2c.py font6x12.fnt source/font_6x12.c`.
+
+
+## Greek and Cyrillic (added 2026-11-03)
+`source/font_6x12_ext.c` holds the Greek and Cyrillic glyphs (U+0384 to U+04F9, 257 of them) of the same Terminus 6x12 font, written by `tools/bdf2ext.py`. It is a Modified Version under the same SIL Open Font License, carries the same notice and is called "Built-in 6x12" in the program (decision 091).

@@ -18,6 +18,7 @@ typedef struct {
 	int width;
 	int height;
 	int line_gap; // pixel fonts only: blank pixel rows below every line (decision 050). The loaders leave it 0
+	bool has_ext; // the built-in 6x12 font only: it has the Greek and Cyrillic letters of font_ext.h (decision 091)
 	int safe;     // pixels kept free at the top and bottom of the screen on the reading screens (decision 062). The loaders leave it 0
 	uint8_t glyph[FONT_GLYPHS][16];
 } Font;
@@ -36,6 +37,9 @@ void font_set_bookmark_glyph(Font *font);
 // How many 8 pixel tile rows are kept free at the top and at the bottom of the screen for a font's
 // `safe` pixels (decision 062): the pixels rounded up to whole tile rows, at most 4.
 int font_safe_tile_rows(const Font *font);
+
+// What the font can draw besides Latin-1, as SCRIPT_ bits (text.h): the layout writes the other letters in Latin letters.
+int font_scripts(const Font *font);
 
 // True for the fonts the tile hardware can draw: 8 wide, and 8 or 16 high.
 bool font_is_tile(const Font *font);

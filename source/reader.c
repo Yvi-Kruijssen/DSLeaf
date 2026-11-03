@@ -436,19 +436,24 @@ void reader_snippet(const Reader *r, int slot, char *out, size_t cap) {
 	bool space = false;
 	for (int l = 0; l < page->line_count && n + 4 < cap; l++) {
 		if (n > 0) space = true; // a new line is a space between words
-		for (int k = 0; k < page->line[l].len && n + 4 < cap; k++) {
-			uint8_t g = page->line[l].glyph[k];
+		for (int k = 0; k < page->line[l].len && n + 5 < cap; k++) {
+			Glyph g = page->line[l].glyph[k];
+			if (g == GLYPH_FILL) continue;
 			if (g == ' ' || g < 0x20) {
 				space = n > 0;
 				continue;
 			}
 			if (space) out[n++] = ' ';
 			space = false;
-			// The glyphs are Latin-1, so write them out as UTF-8.
+			// A glyph is a Latin-1 character or a code point (text.h): write it out as UTF-8.
 			if (g < 0x80) {
 				out[n++] = (char)g;
-			} else {
+			} else if (g < 0x800) {
 				out[n++] = (char)(0xC0 | (g >> 6));
+				out[n++] = (char)(0x80 | (g & 0x3F));
+			} else {
+				out[n++] = (char)(0xE0 | (g >> 12));
+				out[n++] = (char)(0x80 | ((g >> 6) & 0x3F));
 				out[n++] = (char)(0x80 | (g & 0x3F));
 			}
 		}
@@ -581,41 +586,62 @@ bool reader_at_end(Reader *r) {
 	return find_chapter(r, r->chapter, 1) < 0;                   // and no later chapter with anything in it
 }
 
-int reader_page_of(Reader *r, int chapter, uint32_t offset) {
-	if (!r->open || !reader_book_pages_exact(r) || chapter < 0 || chapter >= r->book.chapter_count) return 0;
+bool reader_pages_of(Reader *r, int chapter, const uint32_t *offsets, int n, int *out) {
+	for (int i = 0; i < n; i++) out[i] = 0;
+	if (n <= 0 || !r->open || !reader_book_pages_exact(r) || chapter < 0 || chapter >= r->book.chapter_count) return false;
 	uint32_t before = 0;
 	for (int i = 0; i < chapter; i++) before += r->chapter_pages[i] == READER_NO_TEXT ? 0 : r->chapter_pages[i];
-	if (r->chapter_pages[chapter] == READER_NO_TEXT) return 0;
+	if (r->chapter_pages[chapter] == READER_NO_TEXT) return false;
+
+	// Places at the very start of the chapter are on its first page, which needs no laying out.
+	int pending = 0;
+	for (int i = 0; i < n; i++) {
+		if (offsets[i] == 0) out[i] = (int)before + 1;
+		else pending++;
+	}
+	if (pending == 0) return true;
 
 	ChapterText *tmp = malloc(sizeof *tmp);
-	if (!tmp) return 0;
+	if (!tmp) return false;
 	memset(tmp, 0, sizeof *tmp);
 	if (!ct_open(tmp, &r->book, chapter, 0)) {
 		free(tmp);
-		return 0;
+		return false;
 	}
-	int result = 0;
 	for (;;) {
-		// Is the offset in this window? (The last window takes everything that is left.)
-		if (offset < tmp->base + tmp->len || !ct_has_next(tmp)) {
-			uint32_t rel = offset > tmp->base ? offset - tmp->base : 0;
-			PageStart s = layout_first_page();
-			int k = 0;
-			for (;;) {
-				layout_page(tmp->buf, tmp->len, s, r->cols, r->rows, &r->style, &scratch);
-				if (scratch.at_end || scratch.next.offset > rel || k + 1 >= READER_PAGES_MAX) break;
-				s = scratch.next;
-				k++;
+		// Lay the window out page by page. A place belongs to the first page that ends after it; the last window takes
+		// everything that is left.
+		bool last_window = !ct_has_next(tmp);
+		PageStart s = layout_first_page();
+		int k = 0;
+		for (;;) {
+			layout_page(tmp->buf, tmp->len, s, r->cols, r->rows, &r->style, &scratch);
+			bool last = scratch.at_end;
+			uint32_t page_end = tmp->base + scratch.next.offset;
+			for (int i = 0; i < n; i++) {
+				if (out[i] != 0) continue;
+				if (offsets[i] < page_end || (last && last_window)) {
+					out[i] = (int)before + k + 1;
+					pending--;
+				}
 			}
-			result = (int)before + k + 1;
-			break;
+			if (pending == 0 || last || k + 1 >= READER_PAGES_MAX) break;
+			s = scratch.next;
+			k++;
 		}
-		before += (uint32_t)count_window(r, tmp);
+		if (pending == 0 || last_window) break;
+		before += (uint32_t)(k + 1);
 		if (!ct_next_window(tmp)) break;
 	}
 	ct_close(tmp);
 	free(tmp);
-	return result;
+	return true;
+}
+
+int reader_page_of(Reader *r, int chapter, uint32_t offset) {
+	int page = 0;
+	reader_pages_of(r, chapter, &offset, 1, &page);
+	return page;
 }
 
 bool reader_goto_book_page(Reader *r, int page) {

@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "font.h"
+#include "text.h"
 
 #define PIX_W 256
 #define PIX_H 192
@@ -26,7 +27,7 @@ int pix_rows(const Font *font, bool rotated);
 
 // Draws one glyph in a cell: the cell is cleared to 0, then the glyph's set
 // pixels get `value`. Cells outside the grid are ignored.
-void pix_draw_glyph(uint8_t *fb, const Font *font, bool rotated, int col, int row, uint8_t glyph,
+void pix_draw_glyph(uint8_t *fb, const Font *font, bool rotated, int col, int row, Glyph glyph,
                     uint8_t value);
 
 // Where the grid of a font is on the page as the reader holds it (decision 075, for pictures): the

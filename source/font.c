@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+#include "cjk.h"
+#include "font_ext.h"
+#include "text.h"
+
 int font_safe_tile_rows(const Font *font) {
 	int rows = (font->safe + 7) / 8;
 	return rows < 0 ? 0 : (rows > 4 ? 4 : rows);
@@ -99,4 +103,19 @@ int font_glyph_to_tiles(const Font *font, int glyph, bool rotated, uint32_t out[
 		font_glyph_to_tile(rows, true, out + 8);
 	}
 	return 2;
+}
+
+const uint8_t *font_ext_rows_of(uint32_t cp) {
+	for (int i = 0; i < font_ext_range_count; i++) {
+		const FontRange *r = &font_ext_ranges[i];
+		if (cp >= r->first && cp < (uint32_t)r->first + r->count) return &font_ext_rows[((size_t)r->offset + (cp - r->first)) * 12];
+	}
+	return NULL;
+}
+
+int font_scripts(const Font *font) {
+	int scripts = font->has_ext ? SCRIPT_ALPHABETS : 0;
+	// The CJK glyphs are drawn in pixels, two cells wide: they need a pixel font whose cell they fit (decision 092).
+	if (cjk_loaded() && !font_is_tile(font) && cjk_height() <= font->height && cjk_width() <= 2 * font->width) scripts |= SCRIPT_CJK;
+	return scripts;
 }

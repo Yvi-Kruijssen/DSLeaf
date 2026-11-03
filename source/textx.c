@@ -14,7 +14,7 @@ static const char *const void_names[] = {
 static const char *const skip_names[] = { "head", "style", "script", "svg", "math", "noscript", "title", "template" };
 
 static const char *const block_names[] = {
-	"p", "div", "ul", "ol", "dl", "dt", "dd", "table", "tr", "section", "article", "aside",
+	"p", "div", "ul", "ol", "dl", "dt", "dd", "table", "section", "article", "aside",
 	"header", "footer", "nav", "main", "figure", "figcaption", "address", "pre", "body",
 	"center", "caption", "fieldset", "form", "details", "summary", "tbody", "thead", "tfoot",
 };
@@ -53,6 +53,10 @@ static bool block_kind(const char *name, BlockKind *kind, int *level) {
 	}
 	if (strcasecmp(name, "li") == 0) {
 		*kind = BLOCK_LIST_ITEM;
+		return true;
+	}
+	if (strcasecmp(name, "tr") == 0) {
+		*kind = BLOCK_ROW;
 		return true;
 	}
 	if (strcasecmp(name, "blockquote") == 0) {
@@ -132,7 +136,6 @@ typedef enum { CH_WORD, CH_SPACE, CH_DROP } CharClass;
 static CharClass classify(const char *s, int len) {
 	unsigned char c = (unsigned char)s[0];
 	if (len == 1) return (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') ? CH_SPACE : CH_WORD;
-	if (len == 2 && c == 0xC2 && (unsigned char)s[1] == 0xAD) return CH_DROP; // soft hyphen
 	if (len == 3 && c == 0xE2) {
 		unsigned char b1 = (unsigned char)s[1], b2 = (unsigned char)s[2];
 		if (b1 == 0x80 && (b2 >= 0x82 && b2 <= 0x8A)) return CH_SPACE;       // en, em, thin and other spaces
@@ -170,6 +173,10 @@ static bool scan_text(TextExtractor *tx, TextItem *item) {
 			tx->pending_space = true;
 			break;
 		case CH_WORD:
+			if (tx->word_len == 0 && n == 2 && (unsigned char)ch[0] == 0xC2 && (unsigned char)ch[1] == 0xAD) {
+				tx->scan += (size_t)n; // a soft hyphen on its own, or at the start of a word, has nothing to break
+				break;
+			}
 			if (tx->word_len + n > TEXTX_WORD_MAX) {
 				// Too long: hand out what we have and carry on in a new word.
 				put_word(tx, item);
@@ -355,9 +362,21 @@ bool textx_next(TextExtractor *tx, TextItem *item) {
 		if (is_block) {
 			push_block(tx, name, kind, level);
 			tx->need_block = true;
+			if (kind == BLOCK_ROW) tx->row_cells = 0;
 			continue;
 		}
-		if (is_cell) tx->pending_space = true;
+		if (is_cell) {
+			tx->pending_space = true;
+			// The cells of a row are told apart by a bar between them (decision 089). Cells before the first
+			// text of the row have nothing to separate.
+			if (tx->row_cells++ > 0 && !tx->need_block) {
+				item->kind = TEXT_WORD;
+				memcpy(item->text, "|", 2);
+				item->space_before = true;
+				tx->block_start = false;
+				return true;
+			}
+		}
 		// Everything else (b, i, span, a, ...) is inline and changes nothing.
 	}
 }

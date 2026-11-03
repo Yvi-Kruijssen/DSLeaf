@@ -79,7 +79,8 @@ void bookmark_menu_draw(const BookmarkMenu *menu, const BookMarks *marks, int fi
 
 // Draws the table of contents tab. `toc` may be NULL or empty for a book
 // without one. `here` is the entry the reader is in, marked with a star.
-void toc_menu_draw(const ListMenu *menu, const Toc *toc, int here, int bookmark_count, bool with_page, Screen screen);
+// `pages` has the book page of each entry (0 when not known), shown at the right of its row (decision 089); may be NULL.
+void toc_menu_draw(const ListMenu *menu, const Toc *toc, int here, const int *pages, bool with_page, Screen screen);
 
 // Draws the Page tab: the number being entered, the cursor under its digit and the page the reader is on.
 void page_menu_draw(const PageMenu *menu, int current, int bookmark_count, Screen screen);

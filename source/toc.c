@@ -7,6 +7,7 @@
 #include <strings.h>
 
 #include "chaptertext.h"
+#include "layout.h"
 #include "storage.h"
 
 #define NCX_DEPTH 8
@@ -377,12 +378,76 @@ static bool chapter_title(Epub *book, int chapter, char *title, size_t cap, bool
 	return true;
 }
 
+// The headings inside a big chapter file (decision 089): a book that has no contents and puts many chapters in one file
+// would otherwise get one entry for the lot. Chapters of at least this many bytes are read through for headings of level
+// 1 to 3, which become entries one level down. Smaller chapters are left alone because reading every chapter is as slow
+// as counting the pages of the book.
+#define INNER_SCAN_MIN_BYTES (48 * 1024)
+#define INNER_PER_CHAPTER 100
+
+static void add_inner_headings(Toc *toc, Epub *book, int chapter, const char *chapter_title) {
+	static ChapterText ct; // 45 KB, kept off the stack
+	memset(&ct, 0, sizeof ct);
+	if (!ct_open(&ct, book, chapter, 0)) return;
+
+	int added = 0;
+	bool skipped = chapter_title[0] == '\0'; // the title of the chapter entry came from the first heading: it is not listed twice
+	for (;;) {
+		size_t pos = 0;
+		while (pos < ct.len && added < INNER_PER_CHAPTER && toc->count < TOC_ENTRIES_MAX) {
+			size_t size = record_size(ct.buf + pos);
+			if (size == 0 || pos + size > ct.len) break;
+			if (ct.buf[pos] == REC_BLOCK && ct.buf[pos + 1] == BLOCK_HEADING && ct.buf[pos + 2] >= 1 && ct.buf[pos + 2] <= 3) {
+				char raw[TOC_TITLE_MAX * 4];
+				size_t len = 0;
+				for (size_t q = pos + size; q < ct.len; ) {
+					size_t qs = record_size(ct.buf + q);
+					if (qs == 0 || q + qs > ct.len) break;
+					if (ct.buf[q] == REC_WORD) {
+						size_t wl = ct.buf[q + 2];
+						if (len + wl + 2 < sizeof raw) {
+							raw[len++] = ' ';
+							memcpy(raw + len, ct.buf + q + 3, wl);
+							len += wl;
+						}
+					} else if (ct.buf[q] == REC_BREAK) {
+						if (len + 2 < sizeof raw) raw[len++] = ' ';
+					} else {
+						break; // the next block or a picture: the heading is over
+					}
+					q += qs;
+				}
+				raw[len] = '\0';
+				char full[TOC_TITLE_MAX * 3], title[TOC_TITLE_MAX];
+				clean_title(full, sizeof full, raw);
+				tidy_title(full, sizeof full);
+				clean_title(title, sizeof title, full);
+				if (title[0] != '\0') {
+					if (!skipped && strcmp(title, chapter_title) == 0) {
+						skipped = true;
+					} else if (push_entry(toc, title, "", chapter, 1)) {
+						// The first word of the heading, not the block record before it: a page that starts at the heading
+						// starts at its first word, and a jump to the record before it would show the page before.
+						toc->entry[toc->count - 1].offset = ct.base + (uint32_t)(pos + size);
+						added++;
+					}
+				}
+			}
+			pos += size;
+		}
+		if (added >= INNER_PER_CHAPTER || toc->count >= TOC_ENTRIES_MAX || !ct_has_next(&ct)) break;
+		if (!ct_next_window(&ct)) break;
+	}
+	ct_close(&ct);
+}
+
 static bool toc_from_chapters(Toc *toc, Epub *book) {
 	int sections = 0;
 	for (int i = 0; i < book->chapter_count && toc->count < TOC_ENTRIES_MAX; i++) {
 		char title[TOC_TITLE_MAX];
 		bool heading_first;
 		if (!chapter_title(book, i, title, sizeof title, &heading_first)) continue; // a cover, a picture page
+		bool title_from_heading = title[0] != '\0';
 		if (book->txt && i == 0 && !heading_first && book->title[0]) { // the start of a text file (a title page, a contents list): the name of the book
 			clean_title(title, sizeof title, book->title);
 		} else if (title[0] == '\0') {
@@ -390,6 +455,7 @@ static bool toc_from_chapters(Toc *toc, Epub *book) {
 		}
 		sections++;
 		if (!push_entry(toc, title, "", i, 0)) break;
+		if (!book->txt && book->chapter_size[i] >= INNER_SCAN_MIN_BYTES) add_inner_headings(toc, book, i, title_from_heading ? title : "");
 	}
 	if (toc->count == 0) {
 		toc_free(toc);

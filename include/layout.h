@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "text.h"
 #include "textx.h"
 
 // ---- The compact record format ----
@@ -44,10 +45,11 @@ size_t record_append(uint8_t *buf, size_t len, size_t cap, const TextItem *item)
 typedef struct {
 	uint8_t paragraph_gap;    // blank lines between paragraphs
 	uint8_t paragraph_indent; // first-line indent, in columns
+	uint8_t scripts;          // SCRIPT_ bits (text.h): what the font can draw besides Latin-1 (decision 091)
 } LayoutStyle;
 
 // A blank line between paragraphs and no indent (decision 042).
-#define LAYOUT_STYLE_DEFAULT { 1, 0 }
+#define LAYOUT_STYLE_DEFAULT { 1, 0, 0 }
 
 // Where a page begins. Not always at a block start, so it also remembers what
 // kind of block the page starts in.
@@ -60,7 +62,7 @@ typedef struct {
 } PageStart;
 
 typedef struct {
-	uint8_t glyph[LAYOUT_COLS_MAX]; // glyph codes (Latin-1), indent and centring included as spaces
+	Glyph glyph[LAYOUT_COLS_MAX]; // glyph codes (text.h), indent and centring included as spaces
 	uint8_t len;
 } LayoutLine;
 

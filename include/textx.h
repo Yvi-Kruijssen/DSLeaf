@@ -7,7 +7,7 @@
 //   should put a space in front of it. Words glue together across inline tags,
 //   so "<i>Hel</i>lo" is one word, "Hello". A no-break space (U+00A0) stays
 //   inside a word.
-// - BLOCK: a new block starts (paragraph, heading, list item, quote or rule).
+// - BLOCK: a new block starts (paragraph, heading, list item, quote, rule or table row).
 //   One comes before the first word of every block. A rule is a block of its
 //   own, so the next block starts after it.
 // - LINEBREAK: a <br>.
@@ -47,6 +47,7 @@ typedef enum {
 	BLOCK_LIST_ITEM,
 	BLOCK_QUOTE,
 	BLOCK_RULE,
+	BLOCK_ROW,       // a table row: no blank line between rows, cells separated by "|" (decision 089)
 } BlockKind;
 
 typedef struct {
@@ -81,6 +82,7 @@ typedef struct {
 	bool done;
 	bool want_anchors;  // set this to get ANCHOR items
 	bool anchor_done;   // the anchor of the current tag has been given
+	int row_cells;      // cells started in the current table row
 
 	TextBlock stack[TEXTX_STACK];
 	int stack_depth;

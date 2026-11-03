@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "font.h"
+#include "text.h"
 #include "theme.h"
 
 typedef enum {
@@ -147,7 +148,7 @@ void render_fade(Screen screen, int level);
 void render_present(Screen screen);
 
 // Draws one glyph (a Latin-1 code). Cells outside the grid are ignored.
-void render_putc(Screen screen, int col, int row, uint8_t glyph, Style style);
+void render_putc(Screen screen, int col, int row, Glyph glyph, Style style);
 
 // Draws a Latin-1 string on one row, clipped at the right edge.
 // Returns the column after the last character drawn.

@@ -6,9 +6,9 @@
 
 #include "storage.h"
 
-#define HEADER "# DSLeaf page counts v2\n"
-// Counts from before pictures were pages (decision 075) have no "v=2" line and are not used.
-#define SECTION_VERSION "2"
+#define HEADER "# DSLeaf page counts v4\n"
+// Counts made by an older layout (before pictures were pages, decision 075, before words broke at hyphens, decision 089, or before scripts were part of the layout, decision 091) have another version or none and are not used.
+#define SECTION_VERSION "4"
 
 // A section runs from a line "[book]" to the next one (or the end of the text).
 static const char *next_section(const char *text) {
@@ -57,10 +57,10 @@ bool pagecache_find(const char *text, const char *path, uint32_t size, const Pag
 		const char *end = to ? to : s + strlen(s);
 		if (is_book(s, end, path, size)) {
 			char value[PAGECACHE_PATH_MAX + 8];
-			int c, r, g, i;
+			int c, r, g, i, sc;
 			if (!section_value(s, end, "v", value, sizeof value) || strcmp(value, SECTION_VERSION) != 0) return false;
-			if (!section_value(s, end, "layout", value, sizeof value) || sscanf(value, "%d,%d,%d,%d", &c, &r, &g, &i) != 4) return false;
-			if (c != layout->cols || r != layout->rows || g != layout->gap || i != layout->indent) return false;
+			if (!section_value(s, end, "layout", value, sizeof value) || sscanf(value, "%d,%d,%d,%d,%d", &c, &r, &g, &i, &sc) != 5) return false;
+			if (c != layout->cols || r != layout->rows || g != layout->gap || i != layout->indent || sc != layout->scripts) return false;
 
 			// The counts: exactly `count` numbers, each 0 to 65535.
 			const char *p = strstr(s, "\np=");
@@ -91,8 +91,8 @@ int pagecache_update(const char *old_text, char *out, size_t cap, const char *pa
 	size_t need = 160 + strlen(path) + (size_t)count * 6;
 	char *sec = malloc(need);
 	if (!sec) return -1;
-	size_t len = (size_t)snprintf(sec, need, "[book]\npath=%s\nsize=%lu\nlayout=%d,%d,%d,%d\nv=" SECTION_VERSION "\np=", path, (unsigned long)size,
-	                              layout->cols, layout->rows, layout->gap, layout->indent);
+	size_t len = (size_t)snprintf(sec, need, "[book]\npath=%s\nsize=%lu\nlayout=%d,%d,%d,%d,%d\nv=" SECTION_VERSION "\np=", path, (unsigned long)size,
+	                              layout->cols, layout->rows, layout->gap, layout->indent, layout->scripts);
 	for (int i = 0; i < count; i++) len += (size_t)snprintf(sec + len, need - len, i ? ",%u" : "%u", pages[i]);
 	len += (size_t)snprintf(sec + len, need - len, "\n");
 	if (len + sizeof HEADER > cap) {

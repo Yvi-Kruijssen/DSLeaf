@@ -70,7 +70,7 @@ typedef struct {
 	BlockKind prev_block;
 	int pending_blank; // blank lines wanted before the next line of text
 
-	uint8_t cur[LAYOUT_COLS_MAX];
+	Glyph cur[LAYOUT_COLS_MAX];
 	int cur_len;
 	int cur_text;      // glyphs of real text on the current line (not indent)
 	// Where the current line began, in case the page turns out to be full.
@@ -84,9 +84,9 @@ static void clear_page(Page *page) {
 	page->picture_offset = 0;
 }
 
-static void push_line(State *s, const uint8_t *glyphs, int len) {
+static void push_line(State *s, const Glyph *glyphs, int len) {
 	LayoutLine *l = &s->page->line[s->page->line_count++];
-	memcpy(l->glyph, glyphs, (size_t)len);
+	memcpy(l->glyph, glyphs, (size_t)len * sizeof(Glyph));
 	l->len = (uint8_t)len;
 }
 
@@ -103,9 +103,9 @@ static void finish_line(State *s) {
 	}
 	if (s->block == BLOCK_HEADING && s->cur_len < s->cols) {
 		int pad = (s->cols - s->cur_len) / 2;
-		uint8_t tmp[LAYOUT_COLS_MAX];
-		memset(tmp, ' ', (size_t)pad);
-		memcpy(tmp + pad, s->cur, (size_t)s->cur_len);
+		Glyph tmp[LAYOUT_COLS_MAX];
+		for (int i = 0; i < pad; i++) tmp[i] = ' ';
+		memcpy(tmp + pad, s->cur, (size_t)s->cur_len * sizeof(Glyph));
 		push_line(s, tmp, pad + s->cur_len);
 	} else {
 		push_line(s, s->cur, s->cur_len);
@@ -120,6 +120,7 @@ static int left_indent(const State *s) {
 	case BLOCK_PARAGRAPH: return s->first_line ? s->style.paragraph_indent : 0;
 	case BLOCK_LIST_ITEM: return LAYOUT_LIST_INDENT;
 	case BLOCK_QUOTE:     return LAYOUT_QUOTE_INDENT;
+	case BLOCK_ROW:       return s->first_line ? 0 : LAYOUT_LIST_INDENT; // a row that wraps is hung under its start
 	default:              return 0;
 	}
 }
@@ -147,7 +148,7 @@ static bool start_line(State *s, uint32_t offset, int skip) {
 	s->line_start.continuation = !s->first_line;
 
 	int indent = left_indent(s);
-	memset(s->cur, ' ', (size_t)indent);
+	for (int i = 0; i < indent; i++) s->cur[i] = ' ';
 	if (s->block == BLOCK_LIST_ITEM && s->first_line) {
 		s->cur[0] = '-';
 	}
@@ -157,50 +158,127 @@ static bool start_line(State *s, uint32_t offset, int skip) {
 }
 
 // Turns a UTF-8 word into glyphs. Returns how many.
-static int to_glyphs(const uint8_t *text, int bytes, uint8_t *out) {
+static int to_glyphs(const uint8_t *text, int bytes, Glyph *out, int scripts) {
 	const char *p = (const char *)text;
 	const char *end = p + bytes;
 	int n = 0;
 	while (p < end && n + 3 <= GLYPHS_MAX) {
-		uint8_t g[3];
-		int count = text_utf8_next(&p, g);
+		Glyph g[3];
+		int count = text_utf8_next_ext(&p, g, scripts);
 		for (int i = 0; i < count; i++) out[n++] = g[i];
 	}
 	return n;
 }
 
+// ---- Breaking inside a word (decision 089) ----
+// A word can be broken after a hyphen that is between letters (well-known, a dash made of two hyphens) and at a soft
+// hyphen (glyph 0xAD, from U+00AD or &shy; in a book), where a hyphen is shown only if the line really breaks there. Soft
+// hyphens that are not used are not shown and take no room.
+#define SOFT_HYPHEN 0xAD
+
+static bool is_letter_glyph(Glyph g) {
+	return (g >= '0' && g <= '9') || (g >= 'A' && g <= 'Z') || (g >= 'a' && g <= 'z') || (g >= 0xC0 && g != 0xD7 && g != 0xF7 && g != GLYPH_FILL);
+}
+
+// Glyphs shown for glyphs[from, to): the soft hyphens are not.
+static int visible_width(const Glyph *g, int from, int to) {
+	int n = 0;
+	for (int i = from; i < to; i++) n += g[i] != SOFT_HYPHEN;
+	return n;
+}
+
+// Chinese, Japanese and Korean text has no spaces: a line may break between two wide characters (decision 092), except
+// before a mark that belongs to the character before it (a full stop, a comma, a closing bracket) and after an opening bracket.
+static bool cannot_start_line(Glyph g) {
+	switch (g) {
+	case 0x3001: case 0x3002: case 0x3009: case 0x300B: case 0x300D: case 0x300F: case 0x3011: case 0x3015: // 、。〉》」』】〕
+	case 0x30FC: case 0x3005: case 0x309D: case 0x309E: case 0x30FD: case 0x30FE:                           // ー々ゝゞヽヾ
+	case ',': case '.': case ';': case ':': case '!': case '?': case ')': case ']': case '}': case '%': case '\'': case '"': case '-':
+		return true;
+	}
+	return false;
+}
+
+static bool cannot_end_line(Glyph g) {
+	return g == 0x3008 || g == 0x300A || g == 0x300C || g == 0x300E || g == 0x3010 || g == 0x3014; // 〈《「『【〔
+}
+
+// Where to end the next piece of glyphs[pos, total) on a line with `avail` columns left: total if all of it fits,
+// otherwise the position after the last break that fits (with *soft set when that is a soft hyphen, which is
+// drawn as a hyphen), or -1 if there is no break that fits.
+static int break_point(const Glyph *g, int pos, int total, int avail, bool *soft) {
+	*soft = false;
+	if (visible_width(g, pos, total) <= avail) return total;
+	int best = -1;
+	for (int i = pos; i < total - 1; i++) {
+		bool is_soft = g[i] == SOFT_HYPHEN && i > pos;
+		bool is_hyphen = g[i] == '-' && i > pos && (is_letter_glyph(g[i - 1]) || g[i - 1] == '-') && is_letter_glyph(g[i + 1]);
+		bool is_wide = g[i] == GLYPH_FILL && i > pos && !cannot_start_line(g[i + 1]) && !cannot_end_line(g[i - 1]);
+		if (!is_soft && !is_hyphen && !is_wide) continue;
+		int width = visible_width(g, pos, i + 1) + (is_soft ? 1 : 0);
+		if (width > avail) break;
+		best = i + 1;
+		*soft = is_soft;
+	}
+	return best;
+}
+
+// Adds glyphs[from, to) to the line, leaving the soft hyphens out, and a hyphen for `end_soft`.
+static void append_glyphs(State *s, const Glyph *g, int from, int to, bool end_soft) {
+	for (int i = from; i < to; i++) {
+		if (g[i] == SOFT_HYPHEN) continue;
+		s->cur[s->cur_len++] = g[i];
+		s->cur_text++;
+	}
+	if (end_soft) {
+		s->cur[s->cur_len++] = '-';
+		s->cur_text++;
+	}
+}
+
 // Places a word. Returns false if the page filled up first (then `next` says
 // where to carry on, which is inside this word if some of it was placed).
-static bool place_word(State *s, uint32_t offset, const uint8_t *glyphs, int total, int skip,
+static bool place_word(State *s, uint32_t offset, const Glyph *glyphs, int total, int skip,
                        bool space_before) {
 	int pos = skip; // glyphs of the word already placed
 	bool first_piece = true;
 
 	while (pos < total) {
-		int remaining = total - pos;
-
 		if (s->cur_text == 0) {
 			if (s->cur_len == 0 && !start_line(s, offset, pos)) return false;
 			int avail = s->cols - s->cur_len;
-			int take = remaining < avail ? remaining : avail; // a word wider than the line is cut
-			memcpy(s->cur + s->cur_len, glyphs + pos, (size_t)take);
-			s->cur_len += take;
-			s->cur_text += take;
-			pos += take;
+			bool soft;
+			int end = break_point(glyphs, pos, total, avail, &soft);
+			if (end < 0) { // nothing to break at: a word wider than the line is cut
+				int shown = 0;
+				end = pos;
+				while (end < total && (shown < avail || glyphs[end] == SOFT_HYPHEN)) shown += glyphs[end++] != SOFT_HYPHEN;
+				if (end < total && glyphs[end] == GLYPH_FILL && end > pos + 1) end--; // not between the two cells of a wide character
+				else if (end < total && glyphs[end] == GLYPH_FILL) end++;             // (a line that has room for one cell only: it overflows)
+				soft = false;
+			}
+			append_glyphs(s, glyphs, pos, end, soft);
+			pos = end;
 			if (pos < total) finish_line(s);
 			first_piece = false;
 			continue;
 		}
 
 		int gap = (space_before && first_piece) ? 1 : 0;
-		if (s->cur_len + gap + remaining <= s->cols) {
+		int avail = s->cols - s->cur_len - gap;
+		bool soft;
+		int end = break_point(glyphs, pos, total, avail, &soft);
+		if (end == total) { // all of it fits on this line
 			if (gap) s->cur[s->cur_len++] = ' ';
-			memcpy(s->cur + s->cur_len, glyphs + pos, (size_t)remaining);
-			s->cur_len += remaining;
-			s->cur_text += remaining;
+			append_glyphs(s, glyphs, pos, total, false);
 			return true;
 		}
-		finish_line(s); // does not fit: the word starts the next line
+		if (end > 0) { // the first part fits: break the word
+			if (gap) s->cur[s->cur_len++] = ' ';
+			append_glyphs(s, glyphs, pos, end, soft);
+			pos = end;
+		}
+		finish_line(s); // the rest starts the next line
 		first_piece = false;
 	}
 	return true;
@@ -247,6 +325,7 @@ void layout_page(const uint8_t *buf, size_t len, PageStart start, int cols, int 
 			if (s.prev_block == BLOCK_HEADING || kind == BLOCK_HEADING) gap = 1;
 			else if (kind == BLOCK_PARAGRAPH || kind == BLOCK_QUOTE || kind == BLOCK_RULE) gap = s.style.paragraph_gap;
 			else if (kind == BLOCK_LIST_ITEM && s.prev_block != BLOCK_LIST_ITEM) gap = s.style.paragraph_gap;
+			else if (kind == BLOCK_ROW && s.prev_block != BLOCK_ROW) gap = s.style.paragraph_gap;
 			if (s.pending_blank < gap) s.pending_blank = gap;
 			s.block = kind;
 			s.level = r[2];
@@ -258,7 +337,7 @@ void layout_page(const uint8_t *buf, size_t len, PageStart start, int cols, int 
 					full = true;
 					break;
 				}
-				memset(s.cur, '-', (size_t)cols);
+				for (int i = 0; i < cols; i++) s.cur[i] = '-';
 				s.cur_len = cols;
 				s.cur_text = cols;
 				s.block = BLOCK_PARAGRAPH; // do not centre it
@@ -296,8 +375,8 @@ void layout_page(const uint8_t *buf, size_t len, PageStart start, int cols, int 
 			page->next.continuation = !s.first_line;
 			return;
 		case REC_WORD: {
-			uint8_t glyphs[GLYPHS_MAX];
-			int total = to_glyphs(r + 3, r[2], glyphs);
+			Glyph glyphs[GLYPHS_MAX];
+			int total = to_glyphs(r + 3, r[2], glyphs, s.style.scripts);
 			if (skip > total) skip = total;
 			if (!place_word(&s, (uint32_t)pos, glyphs, total, skip, (r[1] & REC_FLAG_SPACE) != 0)) {
 				full = true;
