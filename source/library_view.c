@@ -19,15 +19,24 @@ bool library_draw(Library *lib, Screen screen) {
 
 	render_clear(screen);
 	paper_begin(screen, PANEL_H);
-	paper_title(screen, "Library");
+	// The title is "Library", and "Library/Fiction/Old" inside a folder, cut at the left when it is too long.
+	char title[40] = "Library";
+	if (lib->dir[0]) {
+		char full[LIBRARY_DIR_MAX + 16];
+		snprintf(full, sizeof full, "Library/%s", lib->dir);
+		size_t n = strlen(full);
+		if (n > 26) snprintf(title, sizeof title, "...%s", full + n - 23);
+		else snprintf(title, sizeof title, "%s", full);
+	}
+	paper_title(screen, title);
 	for (int k = 0; k < LIBRARY_ROWS; k++) paper_rule(screen, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP * k);
 
 	if (lib->unreadable) {
 		render_puts(screen, 3, LIBRARY_FIRST_ROW, "Cannot read the Books folder", STYLE_ERROR);
 		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Is the SD card inserted?", STYLE_DIM);
 	} else if (lib->count == 0) {
-		render_puts(screen, 3, LIBRARY_FIRST_ROW, "No EPUB files found", STYLE_DIM);
-		render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Put .epub or .txt in /Books", STYLE_DIM);
+		render_puts(screen, 3, LIBRARY_FIRST_ROW, lib->dir[0] ? "No books in this folder" : "No books found", STYLE_DIM);
+		if (!lib->dir[0]) render_puts(screen, 3, LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP, "Put .epub or .txt in /Books", STYLE_DIM);
 	}
 
 	for (int k = 0; k < LIBRARY_ROWS; k++) {
@@ -38,11 +47,12 @@ bool library_draw(Library *lib, Screen screen) {
 		bool selected = i == lib->selected;
 		int y = LIBRARY_FIRST_ROW + LIBRARY_ROW_STEP * k;
 
-		// Show the name without .epub or .txt. Leave room for " - error" when it applies.
-		char name[LIBRARY_NAME_MAX];
-		size_t len = strlen(e->name) - (size_t)book_ending_length(e->name);
+		// Show the name without .epub or .txt (a folder has a slash after it). Leave room for " - error" when it applies.
+		char name[LIBRARY_NAME_MAX + 1];
+		size_t len = e->is_dir ? strlen(e->name) : strlen(e->name) - (size_t)book_ending_length(e->name);
 		memcpy(name, e->name, len);
 		name[len] = '\0';
+		if (e->is_dir) strcat(name, "/");
 
 		if (selected) paper_arrow(screen, y);
 		int end = e->failed ? TEXT_END_COL - (int)strlen(ERROR_TEXT) : TEXT_END_COL;
@@ -51,7 +61,7 @@ bool library_draw(Library *lib, Screen screen) {
 	}
 
 	// Below the panel: key hints, the position in the list and a note when files were left out.
-	paper_hint(screen, 12, HINT_Y, "A open  B back");
+	paper_hint(screen, 12, HINT_Y, lib->dir[0] ? "A open  B up" : "A open  B back");
 	if (lib->incomplete) paper_hint(screen, 12 + 15 * 8, HINT_Y, "+more");
 	if (lib->count > 0) {
 		char pos[16];

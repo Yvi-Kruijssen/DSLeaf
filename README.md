@@ -12,7 +12,7 @@ DSLeaf is an EPUB e-reader for the Nintendo DS, written in C with devkitARM and 
 - **Pictures in EPUBs** (PNG and baseline JPEG): each picture is a page of its own, shrunk to fit and dithered, with the last few kept so turning back is quick. Small ornaments and thin strips are left out.
 - **Settings screen** for the screen mode, colour theme, font, line spacing, orientation, paragraph spacing, indent, margins (sides, and above and below for a glass screen protector) and what the reading footer shows ("Book progress": pages, percent, both or nothing), with a **sample page preview**, **Reset all** and an **About** screen with the licences. Changes are saved at once, and the screen works with touch as well as buttons.
 - **Main menu** with a "Recent Reads" list (3 books), plus Open, Library and Settings buttons.
-- **Library** listing all EPUB and text books, sorted alphabetically.
+- **Library** listing the EPUB and text books in your `Books` folder, sorted alphabetically, with support for subfolders.
 - **Dual-screen and single-screen modes**, chosen in Settings. Single-screen mode draws everything on the bottom screen.
 - **One page per screen**: two pages at once in dual-screen mode, one page in single-screen mode.
 - **Rotated reading mode** for holding the device sideways like a book.
@@ -55,7 +55,7 @@ For real hardware, copy `DSLeaf.nds` to the SD card of your flashcart.
 
 ## Installing books
 
-Put your `.epub` and `.txt` files in a `Books` folder at the root of the SD card. DSLeaf stores its own files (settings, bookmarks, extra fonts) in a `DSLeaf` folder on the same card. The default reading font is the 6x12 font built into the program (a converted copy of Terminus 6x12, see the licences below); the 8x8 font is built in too. To use another font, put a `.fnt` file in `DSLeaf/Fonts` (8x8, 8x16 or other sizes such as 6x12, made with `tools/bdf2fnt.py`) and pick it in Settings.
+Put your `.epub` and `.txt` files in a `Books` folder at the root of the SD card (subfolders are fine, up to 6 deep). DSLeaf stores its own files (settings, bookmarks, extra fonts) in a `DSLeaf` folder on the same card. The default reading font is the 6x12 font built into the program (a converted copy of Terminus 6x12, see the licences below); the 8x8 font is built in too. To use another font, put a `.fnt` file in `DSLeaf/Fonts` (8x8, 8x16 or other sizes such as 6x12, made with `tools/bdf2fnt.py`) and pick it in Settings.
 
 ## Licence
 
