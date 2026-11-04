@@ -41,6 +41,9 @@ typedef struct {
 	uint32_t *chapter_size;              // uncompressed size of each chapter file, in bytes
 	int skipped;                         // spine entries that could not be used
 	struct TxtBook *txt;                 // set for a plain text book (txtbook.h), NULL for an EPUB
+	struct ImgCache *images;             // the saved sizes of the pictures (imgcache.h, decision 108), loaded when first needed
+	char path[EPUB_PATH_MAX];            // the book file, for the saved sizes
+	uint32_t file_size;
 } Epub;
 
 // Quick check that `path` can be read and looks like a zip archive.
@@ -50,6 +53,9 @@ EpubResult epub_check(const char *path);
 // epub_close. On failure nothing needs closing.
 EpubResult epub_open(Epub *book, const char *path);
 void epub_close(Epub *book);
+// Writes the saved picture sizes if there are new ones (also done by epub_close). The reader calls it while idle, so that
+// they are not lost when the console is switched off.
+void epub_save_caches(Epub *book);
 
 // Reads one chapter as a stream of words and breaks (see textx.h). The stream
 // holds about 37 KB while open. Only one chapter needs to be open at a time.

@@ -225,6 +225,7 @@ static void load_page_counts(void) {
 
 // Saves the page counts when there is anything new.
 static void save_page_counts(void) {
+	if (reader.open) epub_save_caches(&reader.book); // new picture sizes (decision 108)
 	if (!reader.open || !reader.pages_changed) return;
 	int n = reader.book.chapter_count;
 	if (n > PAGECACHE_CHAPTERS_MAX || reader_export_pages(&reader, page_counts, PAGECACHE_CHAPTERS_MAX) == 0) return;

@@ -4,8 +4,9 @@
 // chapter never has to be in memory all at once. Uses a 32 KB window.
 //
 // The structure follows the well known "puff" decoder by Mark Adler (zlib
-// licence): canonical Huffman codes decoded bit by bit. It is small and easy
-// to check. A table lookup would be faster if speed turns out to matter.
+// licence): canonical Huffman codes, which are decoded with a lookup table of the
+// first INFLATE_LIT_BITS (INFLATE_DIST_BITS) bits and, for a longer code or a
+// damaged stream, bit by bit as puff does (decision 109).
 #ifndef DSLEAF_INFLATE_H
 #define DSLEAF_INFLATE_H
 
@@ -18,12 +19,14 @@
 typedef size_t (*InflateReadFn)(void *user, uint8_t *buf, size_t cap);
 
 #define INFLATE_WINDOW 32768
+#define INFLATE_LIT_BITS 10
+#define INFLATE_DIST_BITS 7
 
 typedef struct {
 	InflateReadFn read;
 	void *user;
 
-	uint8_t inbuf[512];
+	uint8_t inbuf[4096]; // read from the card in pieces of this size (512 made a read and a seek for every sector)
 	size_t in_pos, in_len;
 	bool in_eof;
 
@@ -41,6 +44,8 @@ typedef struct {
 
 	uint16_t lcount[16], lsym[288]; // literal and length codes
 	uint16_t dcount[16], dsym[30];  // distance codes
+	uint16_t lfast[1 << INFLATE_LIT_BITS];   // the codes of up to that many bits: (symbol << 4) | length, 0 for a longer one
+	uint16_t dfast[1 << INFLATE_DIST_BITS];
 } Inflate;
 
 void inflate_init(Inflate *s, InflateReadFn read, void *user);

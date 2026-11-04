@@ -51,6 +51,18 @@ bool zip_open(Zip *zip, const char *path) {
 		zip->entry_count = count;
 		zip->dir_offset = dir_offset;
 		zip->dir_size = dir_size;
+		// Looking up an entry walks the directory, and the program does that many times when it opens a book: reading it
+		// entry by entry from the SD card took seconds (decision 107). It is usually inside the tail read above already.
+		if (dir_size > 0 && dir_size <= ZIP_DIR_CACHE_MAX) {
+			zip->dir = malloc(dir_size);
+			if (zip->dir) {
+				if (dir_offset >= (uint32_t)(size - scan)) memcpy(zip->dir, tail + (dir_offset - (uint32_t)(size - scan)), dir_size);
+				else if (!read_at(zip->file, dir_offset, zip->dir, dir_size)) {
+					free(zip->dir);
+					zip->dir = NULL; // the entries are read from the file one by one, as before
+				}
+			}
+		}
 		free(tail);
 		return true;
 	}
@@ -63,6 +75,8 @@ fail:
 }
 
 void zip_close(Zip *zip) {
+	free(zip->dir);
+	zip->dir = NULL;
 	if (zip->file) fclose(zip->file);
 	zip->file = NULL;
 }
@@ -74,17 +88,21 @@ void zip_iter_start(const Zip *zip, ZipIter *iter) {
 
 bool zip_iter_next(Zip *zip, ZipIter *iter, ZipEntry *entry) {
 	while (iter->index < zip->entry_count) {
-		uint8_t h[46];
-		if (iter->pos + sizeof h > zip->dir_offset + zip->dir_size) return false;
-		if (!read_at(zip->file, iter->pos, h, sizeof h) || le32(h) != CDIR_SIG) return false;
+		uint8_t hbuf[46];
+		const uint8_t *h = hbuf;
+		if (iter->pos + sizeof hbuf > zip->dir_offset + zip->dir_size) return false;
+		if (zip->dir) h = zip->dir + (iter->pos - zip->dir_offset);
+		else if (!read_at(zip->file, iter->pos, hbuf, sizeof hbuf)) return false;
+		if (le32(h) != CDIR_SIG) return false;
 
 		uint16_t name_len = le16(h + 28), extra_len = le16(h + 30), comment_len = le16(h + 32);
-		uint32_t next = iter->pos + (uint32_t)sizeof h + name_len + extra_len + comment_len;
+		uint32_t next = iter->pos + (uint32_t)sizeof hbuf + name_len + extra_len + comment_len;
 		if (next > zip->dir_offset + zip->dir_size) return false;
 
 		bool fits = name_len < ZIP_NAME_MAX;
 		if (fits) {
-			if (fread(entry->name, 1, name_len, zip->file) != name_len) return false;
+			if (zip->dir) memcpy(entry->name, zip->dir + (iter->pos - zip->dir_offset) + sizeof hbuf, name_len);
+			else if (fread(entry->name, 1, name_len, zip->file) != name_len) return false;
 			entry->name[name_len] = '\0';
 			entry->flags = le16(h + 8);
 			entry->method = le16(h + 10);
@@ -113,7 +131,7 @@ static size_t source_read(void *user, uint8_t *buf, size_t cap) {
 	ZipStream *s = user;
 	if (s->in_left == 0) return 0;
 	if (cap > s->in_left) cap = s->in_left;
-	if (fseek(s->file, (long)s->pos, SEEK_SET) != 0) return 0;
+	if (ftell(s->file) != (long)s->pos && fseek(s->file, (long)s->pos, SEEK_SET) != 0) return 0; // no seek while reading on
 	size_t n = fread(buf, 1, cap, s->file);
 	s->pos += (uint32_t)n;
 	s->in_left -= (uint32_t)n;

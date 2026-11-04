@@ -30,7 +30,11 @@ typedef struct {
 	uint32_t dir_offset; // start of the central directory
 	uint32_t dir_size;
 	uint16_t entry_count;
+	uint8_t *dir;        // the whole central directory in memory (decision 107), NULL if it is too big: entries are then read from the file
 } Zip;
+
+// A central directory up to this size is kept in memory while the archive is open.
+#define ZIP_DIR_CACHE_MAX (64 * 1024)
 
 // Walks the entries one by one.
 typedef struct {

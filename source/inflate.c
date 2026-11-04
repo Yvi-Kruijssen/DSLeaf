@@ -30,7 +30,7 @@ void inflate_init(Inflate *s, InflateReadFn read, void *user) {
 	s->state = ST_HEADER;
 }
 
-static int next_byte(Inflate *s) {
+static inline int next_byte(Inflate *s) {
 	if (s->in_pos == s->in_len) {
 		if (s->in_eof) return -1;
 		size_t n = s->read(s->user, s->inbuf, sizeof s->inbuf);
@@ -99,6 +99,43 @@ static int decode(Inflate *s, const uint16_t *count, const uint16_t *symbol) {
 	return -1;
 }
 
+// Fills a lookup table from a code that was just built: every code of at most `bits` bits, at every place the bits that
+// follow it can have. The stream holds a code from its first bit, which is the highest of the code, so the index is the
+// code with its bits reversed.
+static void build_fast(uint16_t *table, int bits, const uint16_t *count, const uint16_t *symbol) {
+	memset(table, 0, sizeof table[0] << bits);
+	unsigned code = 0;
+	int index = 0;
+	for (int len = 1; len <= 15; len++) {
+		for (int k = 0; k < count[len]; k++, code++) {
+			int sym = symbol[index++];
+			if (len > bits) continue;
+			unsigned rev = 0;
+			for (int b = 0; b < len; b++) rev |= ((code >> b) & 1u) << (len - 1 - b);
+			for (unsigned at = rev; at < (1u << bits); at += 1u << len) table[at] = (uint16_t)((sym << 4) | len);
+		}
+		code <<= 1;
+	}
+}
+
+// Decodes one symbol: from the table if its code is in it, otherwise bit by bit. Returns -1 on bad input.
+static inline int decode_fast(Inflate *s, const uint16_t *table, int bits, const uint16_t *count, const uint16_t *symbol) {
+	while (s->bitcnt < bits) { // as many bits as the table needs, fewer at the very end of the input
+		int b = next_byte(s);
+		if (b < 0) break;
+		s->bitbuf |= (uint32_t)b << s->bitcnt;
+		s->bitcnt += 8;
+	}
+	unsigned e = table[s->bitbuf & ((1u << bits) - 1)];
+	int len = (int)(e & 15);
+	if (e != 0 && len <= s->bitcnt) {
+		s->bitbuf >>= len;
+		s->bitcnt -= len;
+		return (int)(e >> 4);
+	}
+	return decode(s, count, symbol);
+}
+
 static void build_fixed(Inflate *s) {
 	uint16_t lengths[288];
 	int i = 0;
@@ -110,6 +147,8 @@ static void build_fixed(Inflate *s) {
 
 	for (i = 0; i < 30; i++) lengths[i] = 5;
 	construct(s->dcount, s->dsym, lengths, 30);
+	build_fast(s->lfast, INFLATE_LIT_BITS, s->lcount, s->lsym);
+	build_fast(s->dfast, INFLATE_DIST_BITS, s->dcount, s->dsym);
 }
 
 static bool build_dynamic(Inflate *s) {
@@ -167,6 +206,8 @@ static bool build_dynamic(Inflate *s) {
 	if (err && (err < 0 || nlen != s->lcount[0] + s->lcount[1])) return false;
 	err = construct(s->dcount, s->dsym, lengths + nlen, ndist);
 	if (err && (err < 0 || ndist != s->dcount[0] + s->dcount[1])) return false;
+	build_fast(s->lfast, INFLATE_LIT_BITS, s->lcount, s->lsym);
+	build_fast(s->dfast, INFLATE_DIST_BITS, s->dcount, s->dsym);
 	return true;
 }
 
@@ -189,8 +230,8 @@ static bool start_block(Inflate *s) {
 	s->final_block = final != 0;
 
 	if (type == 0) {
-		s->bitbuf = 0; // skip to the next byte boundary
-		s->bitcnt = 0;
+		s->bitbuf >>= s->bitcnt & 7; // skip to the next byte boundary (whole bytes read ahead stay)
+		s->bitcnt -= s->bitcnt & 7;
 		int len = get_bits(s, 16), nlen = get_bits(s, 16);
 		if (len < 0 || nlen < 0 || (len ^ 0xFFFF) != nlen) return false;
 		s->stored_left = (uint32_t)len;
@@ -214,9 +255,18 @@ int inflate_read(Inflate *s, uint8_t *out, size_t cap) {
 
 	while (n < cap) {
 		if (s->pending_len > 0) {
-			uint8_t b = s->window[(s->wpos - (uint32_t)s->pending_dist) & WMASK];
-			emit(s, out, &n, b);
-			s->pending_len--;
+			uint32_t pos = s->wpos, from = pos - (uint32_t)s->pending_dist;
+			int left = s->pending_len;
+			size_t room = cap - n;
+			if ((size_t)left > room) left = (int)room;
+			s->pending_len -= left;
+			s->total += (uint32_t)left;
+			while (left-- > 0) {
+				uint8_t b = s->window[from++ & WMASK];
+				s->window[pos++ & WMASK] = b;
+				out[n++] = b;
+			}
+			s->wpos = pos;
 			continue;
 		}
 
@@ -242,7 +292,7 @@ int inflate_read(Inflate *s, uint8_t *out, size_t cap) {
 			break;
 
 		case ST_CODES: {
-			int symbol = decode(s, s->lcount, s->lsym);
+			int symbol = decode_fast(s, s->lfast, INFLATE_LIT_BITS, s->lcount, s->lsym);
 			if (symbol < 0) return fail(s);
 
 			if (symbol < 256) {
@@ -256,7 +306,7 @@ int inflate_read(Inflate *s, uint8_t *out, size_t cap) {
 				if (extra < 0) return fail(s);
 				int len = len_base[symbol] + extra;
 
-				int dsym = decode(s, s->dcount, s->dsym);
+				int dsym = decode_fast(s, s->dfast, INFLATE_DIST_BITS, s->dcount, s->dsym);
 				if (dsym < 0 || dsym >= 30) return fail(s);
 				extra = get_bits(s, dist_extra[dsym]);
 				if (extra < 0) return fail(s);

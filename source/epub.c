@@ -6,6 +6,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "imgcache.h"
 #include "storage.h"
 #include "txtbook.h"
 #include "xml.h"
@@ -338,6 +339,9 @@ EpubResult epub_open(Epub *book, const char *path) {
 	EpubResult check = epub_check(path);
 	if (check != EPUB_OK) return check;
 	if (!zip_open(&book->zip, path)) return EPUB_ERR_NOT_ZIP;
+	snprintf(book->path, sizeof book->path, "%s", path);
+	long fsize = storage_file_size(path);
+	book->file_size = fsize > 0 ? (uint32_t)fsize : 0;
 
 	EpubResult result;
 	Package pkg;
@@ -428,11 +432,17 @@ void epub_close(Epub *book) {
 		txt_close(book);
 		return;
 	}
+	imgcache_close(book->images); // saves what is new
+	book->images = NULL;
 	free(book->chapter);
 	free(book->chapter_size);
 	book->chapter = NULL;
 	book->chapter_size = NULL;
 	zip_close(&book->zip);
+}
+
+void epub_save_caches(Epub *book) {
+	if (!book->txt && book->images) imgcache_save(book->images);
 }
 
 bool epub_chapter_open(Epub *book, int index, EpubChapter *chapter) {
@@ -496,6 +506,15 @@ bool epub_image_info(Epub *book, int chapter, const char *src, char *path, size_
 	else dir[0] = '\0';
 	if (!epub_resolve_path(dir, src, path, cap)) return false;
 
+	// The size of a picture seen before is kept (decision 108): looking at the file costs a trip to another place of it.
+	if (!book->images && book->file_size > 0) book->images = imgcache_open(book->path, book->file_size);
+	uint32_t key = imgcache_key(path);
+	const ImageInfo *known = imgcache_get(book->images, key);
+	if (known) {
+		*info = *known;
+		return true;
+	}
+
 	ZipEntry entry;
 	ZipStream stream;
 	if (!zip_find(&book->zip, path, &entry) || !zip_stream_open(&book->zip, &entry, &stream)) return false;
@@ -517,6 +536,7 @@ bool epub_image_info(Epub *book, int chapter, const char *src, char *path, size_
 	}
 	zip_stream_close(&stream);
 	free(buf);
+	if (result == PROBE_OK) imgcache_put(book->images, key, info);
 	return result == PROBE_OK;
 }
 

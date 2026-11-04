@@ -34,9 +34,12 @@ static int bitmap_id[2];
 static bool logo[2];
 
 // The picture behind the menus: drawn into the same buffers as pixel text, with
-// colours in palette entries 192 up, after the logo's.
-#define BACKDROP_PALETTE_BASE 192
+// colours in palette entries 237 up, after those of a picture (80 to 236, picsink.h). They were at 192, inside the
+// picture's, so a pop-up over a picture page was drawn in the picture's colours (pink and yellow) until the theme was
+// switched (decision 108). The logo's entries (128 to 191) are only used at start-up.
+#define BACKDROP_PALETTE_BASE (PIC_PAL_BASE + PIC_GREYS + PIC_CUBE)
 static bool backdrop[2];
+_Static_assert(BACKDROP_PALETTE_BASE + BD_COUNT <= 256, "the menu colours must fit in the palette after the picture's");
 static bool logo_green;         // palette entry 0 is the logo's green for the start-up slide
 static bool picture_palette[2]; // the palette holds a picture's colours (decision 075)
 static bool popup_rot[2];     // the picture is drawn turned, like a rotated page (decision 066)
