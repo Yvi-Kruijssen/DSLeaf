@@ -70,6 +70,10 @@ static bool tee_row(void *u, int y, int w, const uint8_t *idx) {
 	return t->row(t->user, y, w, idx);
 }
 
+#ifndef JPEG_OVERSAMPLE_PERCENT
+#define JPEG_OVERSAMPLE_PERCENT 150
+#endif
+
 typedef struct {
 	ZipStream zs;
 } Reader;
@@ -106,7 +110,14 @@ DecResult picture_decode(Epub *book, const CtImage *image, int area_w, int area_
 	picsink_init(&ps, area_w, area_h, put_row, put_size, user, &sink);
 	DecResult result;
 	if (image->info.kind == IMAGE_PNG) result = png_decode(read_zip, &rd, &image->info, &sink);
-	else result = jpeg_decode(read_zip, &rd, &image->info, area_w, area_h, &sink);
+	else {
+		// A JPEG is decoded no smaller than the size it will be shown at, which is the picture shrunk to fit the area
+		// (a tall picture is much narrower than the area): this was the whole area before, which made tall pictures
+		// decode at four times the size they needed (decision 112).
+		int fit_w, fit_h;
+		image_fit(image->info.width, image->info.height, area_w, area_h, &fit_w, &fit_h);
+		result = jpeg_decode(read_zip, &rd, &image->info, fit_w * JPEG_OVERSAMPLE_PERCENT / 100, fit_h * JPEG_OVERSAMPLE_PERCENT / 100, &sink);
+	}
 	if (result == DEC_OK && !picsink_finish(&ps)) result = DEC_STOPPED;
 	picsink_close(&ps);
 	zip_stream_close(&rd.zs);

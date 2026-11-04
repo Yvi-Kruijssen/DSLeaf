@@ -41,12 +41,31 @@ int picsink_index(int r, int g, int b, int x, int y) {
 	return PIC_GREYS + (qr * 5 + qg) * 5 + qb;
 }
 
+// a / n by multiplying with inv = ceil(2^32 / n); the product can be one too big, which the check puts right. That
+// holds while a * n < 2^32, and a is at most 255 n: so for n up to 4000 (more than that is not met in a picture
+// that is shrunk to a screen, and is divided).
+static uint32_t div_by(uint32_t a, uint32_t n, uint64_t inv) {
+	if (n > 4000) return a / n;
+	uint32_t q = (uint32_t)(((uint64_t)a * inv) >> 32);
+	if ((uint64_t)q * n > a) q--;
+	return q;
+}
+
 static bool flush(PicSink *ps) {
 	if (ps->cur < 0) return true;
+	// The averages are sums divided by the number of pixels summed, which is the same for nearly every pixel of a
+	// row: the reciprocal is worked out when the number changes and the division is a multiplication (the ARM9 has no
+	// divide instruction, decision 112). The result is exactly the quotient.
+	uint32_t last_n = 0;
+	uint64_t inv = 0;
 	for (int x = 0; x < ps->dst_w; x++) {
 		uint32_t n = (uint32_t)ps->col_count[x] * (uint32_t)ps->rows_in;
 		if (n == 0) n = 1;
-		int r = (int)(ps->acc[x * 3] / n), g = (int)(ps->acc[x * 3 + 1] / n), b = (int)(ps->acc[x * 3 + 2] / n);
+		if (n != last_n) {
+			last_n = n;
+			inv = 0xFFFFFFFFull / n + 1; // 2^32 / n rounded up
+		}
+		int r = (int)div_by(ps->acc[x * 3], n, inv), g = (int)div_by(ps->acc[x * 3 + 1], n, inv), b = (int)div_by(ps->acc[x * 3 + 2], n, inv);
 		ps->line[x] = (uint8_t)(PIC_PAL_BASE + picsink_index(r, g, b, x, ps->cur));
 	}
 	int y = ps->cur;
