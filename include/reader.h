@@ -33,8 +33,11 @@ typedef struct {
 	LayoutStyle style;              // paragraph spacing and indent
 	int first_chapter;              // the first chapter with text, shown as chapter 1
 
-	PageStart start[READER_PAGES_MAX]; // where each page of the current window starts
+	PageStart start[READER_PAGES_MAX]; // where each page of the current window starts (only the pages that are
+	                                   // laid out so far while the window is still being read, decision 111)
 	int page_count;
+	PageStart next_start;           // where the first page after `start[page_count - 1]` begins, while !laid
+	bool laid;                      // the whole window is read and laid out, so page_count is the pages of the window
 	int page;                       // first page being shown, a multiple of per_view
 
 	Page view[READER_VIEW_MAX];
@@ -71,6 +74,11 @@ void reader_close(Reader *r);
 // at the very end or start of the book.
 bool reader_next(Reader *r);
 bool reader_prev(Reader *r);
+
+// A page is shown as soon as the text up to it is read (decision 111), the rest of its window being read and laid
+// out later. This does one small step of that when it is not done yet, and returns true; call it when the user is
+// idle. Returns false when there is nothing to finish. Everything else works the same either way.
+bool reader_finish_step(Reader *r);
 
 // Changes the page size or the number of pages shown, keeping the position.
 void reader_resize(Reader *r, int cols, int rows, int per_view);

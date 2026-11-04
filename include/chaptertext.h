@@ -22,6 +22,7 @@
 
 #define CT_SOFT_LIMIT (128 * 1024) // a window ends at the first paragraph break after this
 #define CT_SLACK (16 * 1024)       // room for a paragraph that goes on past the limit
+#define CT_FIRST_SLACK (8 * 1024)  // a window opened lazily is read this far past the place that is wanted (decision 111)
 
 // A picture of the current window that gets a page (decision 075).
 #define CT_IMAGES_MAX 32
@@ -40,6 +41,8 @@ typedef struct {
 	TextItem held;      // the first item of the next window
 	bool have_held;
 	bool split_inside;  // the last window ended in the middle of a paragraph
+	bool window_open;   // the window is only filled part of the way and can take more (decision 111); `len` grows
+	size_t content_end; // where the last word or block record of the window ends
 
 	uint8_t *buf;       // the current window
 	size_t len;
@@ -60,6 +63,17 @@ typedef struct {
 // Returns false if the chapter cannot be read or memory is short.
 bool ct_open(ChapterText *ct, Epub *book, int chapter, uint32_t offset);
 void ct_close(ChapterText *ct);
+
+// A window opened lazily (ct_open_lazy, ct_next_window_lazy) holds only the start of its text, up to `window_open`
+// being false. ct_fill_more reads more of it, ct_complete the rest. ct_has_next and ct_next_window only mean a
+// following window once the window is complete (ct_next_window completes it first).
+// `skipped` (may be NULL) is called for each whole window that is passed on the way to the one holding `offset`,
+// before the next one is started (the reader counts its pages with it, decision 111).
+typedef void (*CtSkipFn)(const ChapterText *ct, void *user);
+bool ct_open_lazy(ChapterText *ct, Epub *book, int chapter, uint32_t offset, CtSkipFn skipped, void *user);
+bool ct_next_window_lazy(ChapterText *ct);
+void ct_fill_more(ChapterText *ct, size_t more);
+void ct_complete(ChapterText *ct);
 
 bool ct_has_next(const ChapterText *ct);
 bool ct_next_window(ChapterText *ct); // false if this is the last window

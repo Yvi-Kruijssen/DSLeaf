@@ -48,23 +48,30 @@ static void skip_images(ChapterText *ct) {
 	}
 }
 
-// Fills the buffer with the next window of records.
-static void fill_window(ChapterText *ct) {
-	size_t cap = CT_SOFT_LIMIT + CT_SLACK;
+// Starts a window: nothing in the buffer yet.
+static void begin_window(ChapterText *ct) {
 	ct->len = 0;
 	ct->has_words = false;
 	ct->image_count = 0;
-	size_t content_end = 0; // where the last word or block record ends
+	ct->content_end = 0; // where the last word or block record ends
+	ct->window_open = true;
 
 	if (ct->split_inside) {
 		// The previous window stopped inside a paragraph. Start this one with a block.
 		TextItem block = { .kind = TEXT_BLOCK, .block = BLOCK_PARAGRAPH };
-		ct->len += record_append(ct->buf, ct->len, cap, &block);
-		content_end = ct->len;
+		ct->len += record_append(ct->buf, ct->len, CT_SOFT_LIMIT + CT_SLACK, &block);
+		ct->content_end = ct->len;
 		ct->split_inside = false;
 	}
+}
+
+// Reads records into the window until it holds `target` bytes or it is complete (then window_open is false).
+// Can be called again to carry on: the state is in `ct`.
+static void fill_to(ChapterText *ct, size_t target) {
+	size_t cap = CT_SOFT_LIMIT + CT_SLACK;
 
 	for (;;) {
+		if (ct->len >= target) return; // enough for now; the window stays open
 		TextItem item;
 		if (ct->have_held) {
 			item = ct->held;
@@ -87,7 +94,7 @@ static void fill_window(ChapterText *ct) {
 		if (ct->len >= CT_SOFT_LIMIT && item.kind == TEXT_BLOCK) {
 			ct->held = item;
 			ct->have_held = true;
-			settle_anchors(ct, content_end);
+			settle_anchors(ct, ct->content_end);
 			break;
 		}
 		if (item.kind == TEXT_IMAGE) {
@@ -108,18 +115,28 @@ static void fill_window(ChapterText *ct) {
 			ct->held = item;
 			ct->have_held = true;
 			ct->split_inside = true;
-			settle_anchors(ct, content_end);
+			settle_anchors(ct, ct->content_end);
 			break;
 		}
 		ct->len += n;
-		if (item.kind == TEXT_WORD || item.kind == TEXT_BLOCK) content_end = ct->len;
+		if (item.kind == TEXT_WORD || item.kind == TEXT_BLOCK) ct->content_end = ct->len;
 		if (item.kind == TEXT_WORD) ct->has_words = true;
 	}
+	ct->window_open = false;
 }
 
 static void fill(ChapterText *ct) {
-	fill_window(ct);
+	begin_window(ct);
+	fill_to(ct, (size_t)-1);
 	if (ct->watch_count > 0) skip_images(ct);
+}
+
+void ct_fill_more(ChapterText *ct, size_t more) {
+	if (ct->window_open) fill_to(ct, ct->len + more);
+}
+
+void ct_complete(ChapterText *ct) {
+	if (ct->window_open) fill_to(ct, (size_t)-1);
 }
 
 bool ct_has_next(const ChapterText *ct) {
@@ -127,10 +144,22 @@ bool ct_has_next(const ChapterText *ct) {
 }
 
 bool ct_next_window(ChapterText *ct) {
+	ct_complete(ct);
 	if (!ct_has_next(ct)) return false;
 	ct->base += (uint32_t)ct->len;
 	ct->window++;
 	fill(ct);
+	return true;
+}
+
+// The window that is started by a next window call, filled only as far as its first bytes.
+bool ct_next_window_lazy(ChapterText *ct) {
+	ct_complete(ct);
+	if (!ct_has_next(ct)) return false;
+	ct->base += (uint32_t)ct->len;
+	ct->window++;
+	begin_window(ct);
+	fill_to(ct, CT_FIRST_SLACK);
 	return true;
 }
 
@@ -152,6 +181,31 @@ static bool open_with(ChapterText *ct, Epub *book, int chapter, uint32_t offset)
 bool ct_open(ChapterText *ct, Epub *book, int chapter, uint32_t offset) {
 	memset(ct, 0, sizeof *ct);
 	return open_with(ct, book, chapter, offset);
+}
+
+// Like ct_open, but the window holding `offset` is read only a little past it (decision 111).
+bool ct_open_lazy(ChapterText *ct, Epub *book, int chapter, uint32_t offset, CtSkipFn skipped, void *user) {
+	memset(ct, 0, sizeof *ct);
+	ct->book = book;
+	ct->chapter = chapter;
+	ct->buf = malloc(CT_SOFT_LIMIT + CT_SLACK);
+	if (!ct->buf) return false;
+	if (!open_stream(ct)) {
+		ct_close(ct);
+		return false;
+	}
+	begin_window(ct);
+	for (;;) {
+		uint64_t want = (offset > ct->base ? offset - ct->base : 0) + (uint64_t)CT_FIRST_SLACK;
+		fill_to(ct, want > (uint64_t)(CT_SOFT_LIMIT + CT_SLACK) ? (size_t)(CT_SOFT_LIMIT + CT_SLACK) : (size_t)want);
+		if (offset < (uint64_t)ct->base + ct->len || ct->window_open) break; // the offset is in this window
+		if (!ct_has_next(ct)) break;                                           // past the end: the last window
+		if (skipped) skipped(ct, user);
+		ct->base += (uint32_t)ct->len;
+		ct->window++;
+		begin_window(ct);
+	}
+	return true;
 }
 
 int ct_find_anchors(Epub *book, int chapter, const char *const *ids, int count, uint32_t *offsets) {

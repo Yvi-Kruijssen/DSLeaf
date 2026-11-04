@@ -315,15 +315,26 @@ static void update_main_menu(uint32_t actions, bool tapped, int x, int y) {
 	}
 }
 
+// Saves the folder and the selection when the Library is left (decision 110); only when they changed.
+static void save_library_state(void) {
+	static char saved[LIBRARY_DIR_MAX + LIBRARY_NAME_MAX + 24];
+	char text[sizeof saved];
+	library_state_text(&library, text, sizeof text);
+	if (strcmp(text, saved) == 0) return;
+	if (storage_write_text(LIBRARY_STATE_PATH, text)) memcpy(saved, text, sizeof saved);
+}
+
 static void update_library(uint32_t actions, bool tapped, int x, int y) {
 	LibraryEvent e = library_update(&library, actions, tapped, x, y);
 
 	if (e.kind == LIBRARY_EVENT_BACK) {
+		save_library_state();
 		show_main_menu();
 	} else if (e.kind == LIBRARY_EVENT_OPEN) {
 		char path[RECENT_PATH_MAX];
 		library_path(&library, e.index, path, sizeof path);
 
+		save_library_state();
 		bool ok = open_book(path);
 		library_set_failed(&library, e.index, !ok);
 	} else if (e.kind == LIBRARY_EVENT_TOGGLE_DONE) {
@@ -581,6 +592,10 @@ int main(void) {
 	cjk_load(); // the optional CJK font on the card (decision 092)
 	recent_load(&recent);
 	finished_load(finished_text, sizeof finished_text);
+	{
+		static char state[LIBRARY_DIR_MAX + LIBRARY_NAME_MAX + 24];
+		if (storage_read_text(LIBRARY_STATE_PATH, state, sizeof state) > 0) library_state_apply(&library, state);
+	}
 	rebuild_menu();
 
 	// Three seconds, or until a button or the touchscreen is pressed, then the logo slides up
@@ -642,6 +657,8 @@ int main(void) {
 		if (current == SCREEN_READER && !bm_open && !box_visible) {
 			if (actions || tapped) {
 				idle_frames = 0;
+			} else if (reader_finish_step(&reader)) {
+				// The page was shown before its whole window was read: finish that first (decision 111).
 			} else {
 				idle_frames++;
 				if (!counting_done && idle_frames >= COUNT_AFTER_FRAMES) {

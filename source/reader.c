@@ -28,6 +28,8 @@ void reader_geometry(const Font *font, int margin, bool rotated, int *cols, int 
 	if (*rows > LAYOUT_ROWS_MAX) *rows = LAYOUT_ROWS_MAX;
 }
 
+#define READER_STEP_BYTES (8 * 1024) // how much more of a window is read when a page is needed that is not laid out yet
+
 static Page scratch; // used while counting pages, too big for the stack
 
 // The chapter being counted in the background, between steps (decision 055). It has a buffer of its
@@ -53,21 +55,19 @@ static void forget_pages(Reader *r) {
 	r->windows_chapter = -1;
 }
 
-// Lays out the whole current window to find where every page starts.
-static void paginate(Reader *r) {
-	PageStart s = layout_first_page();
+// The pages of the current window are laid out as far as its text has been read (decision 111). A page is
+// final once it is full (it does not depend on what follows) or the window is complete: the page at the end of
+// the text read so far may still grow when more is read, so it waits in `next_start`.
+static void start_window(Reader *r) {
 	r->page_count = 0;
+	r->next_start = layout_first_page();
+	r->laid = false;
+}
 
-	while (r->page_count < READER_PAGES_MAX) {
-		r->start[r->page_count++] = s;
-		layout_page(r->text.buf, r->text.len, s, r->cols, r->rows, &r->style, &scratch);
-		if (scratch.at_end) break;
-		s = scratch.next;
-	}
-
+// Remembers the pages of this window. When the last window of a chapter is reached and all the windows
+// before it have been seen, the chapter is known whole.
+static void note_window_pages(Reader *r) {
 	if (!r->chapter_pages) return;
-	// Remember the pages of this window. When the last window of a chapter is reached and all the
-	// windows before it have been seen, the chapter is known whole.
 	if (r->windows_chapter != r->chapter) {
 		memset(r->window_pages, 0, sizeof r->window_pages);
 		r->windows_chapter = r->chapter;
@@ -86,6 +86,48 @@ static void paginate(Reader *r) {
 			r->chapter_pages[r->chapter] = n;
 		}
 	}
+}
+
+// Lays out the pages of the text read so far, as far as they are final.
+static void paginate_more(Reader *r) {
+	while (r->page_count < READER_PAGES_MAX) {
+		layout_page(r->text.buf, r->text.len, r->next_start, r->cols, r->rows, &r->style, &scratch);
+		if (scratch.at_end && r->text.window_open) return; // the end of what is read, not of the window: wait
+		r->start[r->page_count++] = r->next_start;
+		if (scratch.at_end) break;
+		r->next_start = scratch.next;
+	}
+	ct_complete(&r->text); // (a window with 1024 pages is not laid out further)
+	r->laid = true;
+	note_window_pages(r);
+}
+
+// Reads and lays out the rest of the window.
+static void complete(Reader *r) {
+	if (r->laid) return;
+	ct_complete(&r->text);
+	paginate_more(r);
+}
+
+// Lays out the whole current window to find where every page starts.
+static void paginate(Reader *r) {
+	start_window(r);
+	complete(r);
+}
+
+// Makes sure page `page` of the window is laid out, if there is one: reads on in small pieces until it is.
+static void ensure_page(Reader *r, int page) {
+	while (page >= r->page_count && !r->laid) {
+		ct_fill_more(&r->text, READER_STEP_BYTES);
+		paginate_more(r);
+	}
+}
+
+bool reader_finish_step(Reader *r) {
+	if (!r->open || r->laid) return false;
+	ct_fill_more(&r->text, READER_STEP_BYTES * 2);
+	paginate_more(r);
+	return true;
 }
 
 static int last_view_start(const Reader *r) {
@@ -116,19 +158,40 @@ static void layout_view(Reader *r) {
 static void show_page(Reader *r, int page) {
 	r->notice[0] = '\0';
 	r->page = page / r->per_view * r->per_view;
+	ensure_page(r, r->page + r->per_view - 1); // the pages of the view are laid out
 	layout_view(r);
 }
 
-// Loads a chapter and shows the page holding `offset` (a chapter offset).
+static int count_window(const Reader *r, const ChapterText *ct);
+
+// A window passed on the way to the place wanted in a chapter: its pages are counted, so that the number of the page
+// in the book is exact (a place in the second window of a long chapter would otherwise get an estimate, decision 111).
+static void count_skipped(const ChapterText *ct, void *user) {
+	Reader *r = user;
+	if (!r->chapter_pages) return;
+	if (r->windows_chapter != ct->chapter) {
+		memset(r->window_pages, 0, sizeof r->window_pages);
+		r->windows_chapter = ct->chapter;
+	}
+	if (ct->window < READER_WINDOWS_MAX) r->window_pages[ct->window] = (uint16_t)count_window(r, ct);
+}
+
+// Loads a chapter and shows the page holding `offset` (a chapter offset). Only the text up to that page is read and
+// laid out; the rest of its window follows later (reader_finish_step) or when a page asks for it (decision 111).
 static bool load_chapter(Reader *r, int chapter, uint32_t offset) {
 	if (r->open) ct_close(&r->text);
 	r->open = false;
-	if (!ct_open(&r->text, &r->book, chapter, offset)) return false;
+	if (!ct_open_lazy(&r->text, &r->book, chapter, offset, count_skipped, r)) return false;
 	r->open = true;
 	r->chapter = chapter;
-	paginate(r);
+	start_window(r);
 
 	uint32_t in_window = offset > r->text.base ? offset - r->text.base : 0;
+	for (;;) {
+		paginate_more(r);
+		if (r->laid || r->next_start.offset > in_window) break; // the page that holds the offset is laid out
+		ct_fill_more(&r->text, READER_STEP_BYTES);
+	}
 	show_page(r, page_for(r, in_window));
 	return true;
 }
@@ -222,13 +285,14 @@ void reader_close(Reader *r) {
 bool reader_next(Reader *r) {
 	if (!r->open) return false;
 
+	ensure_page(r, r->page + r->per_view); // is there a page after this view?
 	if (r->page + r->per_view < r->page_count) {
 		show_page(r, r->page + r->per_view);
 		return true;
 	}
-	if (ct_has_next(&r->text)) {
-		ct_next_window(&r->text);
-		paginate(r);
+	if (ct_has_next(&r->text)) { // (the window is laid out whole here)
+		ct_next_window_lazy(&r->text);
+		start_window(r);
 		show_page(r, 0);
 		return true;
 	}
@@ -363,10 +427,13 @@ static void book_counts(const Reader *r, uint64_t *before, uint64_t *total) {
 // Pages of the chapter in the windows before the current one: exact when they were all seen,
 // otherwise the windows are taken to be as long as this one.
 static uint64_t pages_before_window(const Reader *r) {
-	if (r->windows_chapter != r->chapter) return (uint64_t)r->text.window * (uint64_t)r->page_count;
+	// The pages of this window while it is not laid out whole: what the part laid out so far suggests for a full window.
+	uint64_t window_pages = (uint64_t)r->page_count;
+	if (!r->laid && r->next_start.offset > 0) window_pages = window_pages * CT_SOFT_LIMIT / r->next_start.offset;
+	if (r->windows_chapter != r->chapter) return (uint64_t)r->text.window * window_pages;
 	uint64_t sum = 0;
 	for (int w = 0; w < r->text.window; w++) {
-		if (w >= READER_WINDOWS_MAX || r->window_pages[w] == 0) return (uint64_t)r->text.window * (uint64_t)r->page_count;
+		if (w >= READER_WINDOWS_MAX || r->window_pages[w] == 0) return (uint64_t)r->text.window * window_pages;
 		sum += r->window_pages[w];
 	}
 	return sum;
@@ -394,6 +461,7 @@ int reader_book_pages(const Reader *r) {
 bool reader_goto(Reader *r, int chapter, uint32_t offset) {
 	if (!r->open || chapter < 0 || chapter >= r->book.chapter_count) return false;
 
+	complete(r); // the whole window must be known to tell whether the place is in it
 	uint32_t base = r->text.base;
 	// An offset at the very end of the window is the start of the next one, if there is a next one.
 	bool inside = offset >= base && (offset < base + r->text.len || (offset == base + r->text.len && !ct_has_next(&r->text)));
@@ -583,8 +651,13 @@ bool reader_count_step(Reader *r) {
 }
 
 bool reader_at_end(Reader *r) {
-	if (!r->open || ct_has_next(&r->text) || r->page_count == 0) return false;
+	if (!r->open || r->page_count == 0) return false;
 	if (r->page + r->per_view < r->page_count) return false;     // more pages in this window
+	// A window that is not read whole yet is not the last one when another chapter with text follows, so it is
+	// not read for this (decision 111).
+	if (!r->laid && find_chapter(r, r->chapter, 1) >= 0) return false;
+	complete(r);
+	if (r->page + r->per_view < r->page_count || ct_has_next(&r->text)) return false;
 	return find_chapter(r, r->chapter, 1) < 0;                   // and no later chapter with anything in it
 }
 
@@ -670,6 +743,7 @@ bool reader_goto_book_page(Reader *r, int page) {
 	int k = (int)((uint64_t)(page - 1) - before);
 
 	if (!load_chapter(r, chapter, 0)) return false;
+	complete(r);
 	// A long chapter is several windows: skip the ones before the page.
 	while (k >= r->page_count && ct_has_next(&r->text)) {
 		k -= r->page_count;
