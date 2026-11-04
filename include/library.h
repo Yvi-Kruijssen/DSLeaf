@@ -60,6 +60,14 @@ bool library_scan(Library *lib);
 // entry. Falls back to /Books if the folder is gone. Returns false if nothing could be read.
 bool library_rescan(Library *lib);
 
+// The folder and the selected entry kept between sessions in LIBRARY_STATE_PATH (decision 110): two lines,
+// `dir=Fiction/Old` and `select=Name.epub` (a folder has a `/` after its name). library_state_text writes them;
+// library_state_apply reads them (a bad or missing line is ignored, so a damaged file gives the top folder). The
+// folder is read when the Library is next shown (library_rescan), which falls back to /Books if it is gone.
+#define LIBRARY_STATE_PATH "/DSLeaf/library.txt"
+void library_state_text(const Library *lib, char *buf, size_t cap);
+void library_state_apply(Library *lib, const char *text);
+
 // Sets the read marks from the text of the list of finished books (finished.h).
 void library_apply_finished(Library *lib, const char *text);
 

@@ -118,6 +118,67 @@ bool library_scan(Library *lib) {
 
 static void select_entry(Library *lib, int index);
 
+void library_state_text(const Library *lib, char *buf, size_t cap) {
+	const char *name = "", *slash = "";
+	if (lib->selected >= 0 && lib->selected < lib->count) {
+		name = lib->entry[lib->selected].name;
+		if (lib->entry[lib->selected].is_dir) slash = "/";
+	}
+	snprintf(buf, cap, "dir=%s\nselect=%s%s\n", lib->dir, name, slash);
+}
+
+// A folder path as the Library writes it: names of folders joined by single slashes, none empty, "." or "..".
+static bool valid_dir(const char *d) {
+	size_t len = strlen(d);
+	if (len >= LIBRARY_DIR_MAX) return false;
+	int depth = 0;
+	while (*d) {
+		const char *end = strchr(d, '/');
+		size_t n = end ? (size_t)(end - d) : strlen(d);
+		if (n == 0 || (n == 1 && d[0] == '.') || (n == 2 && d[0] == '.' && d[1] == '.')) return false;
+		if (memchr(d, '\\', n)) return false;
+		if (++depth > LIBRARY_DEPTH_MAX) return false;
+		if (!end) break;
+		if (end[1] == '\0') return false; // a slash at the end
+		d = end + 1;
+	}
+	return true;
+}
+
+void library_state_apply(Library *lib, const char *text) {
+	char dir[LIBRARY_DIR_MAX] = "", name[LIBRARY_NAME_MAX] = "";
+	bool have_dir = false;
+	for (const char *p = text; *p;) {
+		const char *eol = strchr(p, '\n');
+		size_t n = eol ? (size_t)(eol - p) : strlen(p);
+		size_t m = n;
+		if (m > 0 && p[m - 1] == '\r') m--;
+		if (m >= 4 && strncmp(p, "dir=", 4) == 0 && m - 4 < sizeof dir) {
+			memcpy(dir, p + 4, m - 4);
+			dir[m - 4] = '\0';
+			have_dir = true;
+		} else if (m >= 7 && strncmp(p, "select=", 7) == 0 && m - 7 < sizeof name) {
+			memcpy(name, p + 7, m - 7);
+			name[m - 7] = '\0';
+		}
+		p = eol ? eol + 1 : p + n;
+	}
+	if (!have_dir || !valid_dir(dir)) return;
+	snprintf(lib->dir, sizeof lib->dir, "%s", dir);
+	// The list itself is read later by library_rescan, which looks for the selected entry by its name: leave one
+	// entry with the saved name for it to find.
+	lib->count = 0;
+	lib->selected = 0;
+	size_t len = strlen(name);
+	if (len == 0) return;
+	bool is_dir = name[len - 1] == '/';
+	if (is_dir) name[--len] = '\0';
+	if (len == 0) return;
+	snprintf(lib->entry[0].name, sizeof lib->entry[0].name, "%s", name);
+	lib->entry[0].is_dir = is_dir;
+	lib->count = 1;
+}
+
 bool library_rescan(Library *lib) {
 	char name[LIBRARY_NAME_MAX] = "";
 	bool was_dir = false;
