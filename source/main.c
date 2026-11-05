@@ -54,7 +54,7 @@ static int toc_here;     // the entry the reader is in, or -1
 
 // Counting the pages of the rest of the book while the reader is idle (decision 055).
 #define COUNT_AFTER_FRAMES 90  // idle frames (1.5 s) before a counting step
-#define COUNT_GAP_FRAMES 45    // idle frames between two steps
+#define COUNT_GAP_FRAMES 6     // idle frames between two steps (a step is short, decision 113)
 #define SAVE_COUNTS_FRAMES 300 // idle frames (5 s) before new counts are saved
 static int idle_frames;
 static bool counting_done;     // every chapter is known, or counting is not possible

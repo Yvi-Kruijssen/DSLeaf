@@ -71,7 +71,10 @@ void ct_close(ChapterText *ct);
 // before the next one is started (the reader counts its pages with it, decision 111).
 typedef void (*CtSkipFn)(const ChapterText *ct, void *user);
 bool ct_open_lazy(ChapterText *ct, Epub *book, int chapter, uint32_t offset, CtSkipFn skipped, void *user);
-bool ct_next_window_lazy(ChapterText *ct);
+// `first` is how many bytes of the new window are read at once (0: none, the caller reads on with ct_fill_more).
+bool ct_next_window_lazy(ChapterText *ct, size_t first);
+// Opens a chapter with an empty first window (the same, without reading anything: for the background counting).
+bool ct_open_start(ChapterText *ct, Epub *book, int chapter);
 void ct_fill_more(ChapterText *ct, size_t more);
 void ct_complete(ChapterText *ct);
 

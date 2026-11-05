@@ -153,13 +153,13 @@ bool ct_next_window(ChapterText *ct) {
 }
 
 // The window that is started by a next window call, filled only as far as its first bytes.
-bool ct_next_window_lazy(ChapterText *ct) {
+bool ct_next_window_lazy(ChapterText *ct, size_t first) {
 	ct_complete(ct);
 	if (!ct_has_next(ct)) return false;
 	ct->base += (uint32_t)ct->len;
 	ct->window++;
 	begin_window(ct);
-	fill_to(ct, CT_FIRST_SLACK);
+	fill_to(ct, first);
 	return true;
 }
 
@@ -181,6 +181,20 @@ static bool open_with(ChapterText *ct, Epub *book, int chapter, uint32_t offset)
 bool ct_open(ChapterText *ct, Epub *book, int chapter, uint32_t offset) {
 	memset(ct, 0, sizeof *ct);
 	return open_with(ct, book, chapter, offset);
+}
+
+bool ct_open_start(ChapterText *ct, Epub *book, int chapter) {
+	memset(ct, 0, sizeof *ct);
+	ct->book = book;
+	ct->chapter = chapter;
+	ct->buf = malloc(CT_SOFT_LIMIT + CT_SLACK);
+	if (!ct->buf) return false;
+	if (!open_stream(ct)) {
+		ct_close(ct);
+		return false;
+	}
+	begin_window(ct);
+	return true;
 }
 
 // Like ct_open, but the window holding `offset` is read only a little past it (decision 111).

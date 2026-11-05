@@ -29,6 +29,9 @@ void reader_geometry(const Font *font, int margin, bool rotated, int *cols, int 
 }
 
 #define READER_STEP_BYTES (8 * 1024) // how much more of a window is read when a page is needed that is not laid out yet
+// How much is read in one idle step (finishing a window, counting the pages of the rest of the book). A step has to be
+// short: keys are only looked at between steps, and a quick tap in the middle of a long one is lost (decision 113).
+#define READER_IDLE_BYTES (4 * 1024)
 
 static Page scratch; // used while counting pages, too big for the stack
 
@@ -125,7 +128,7 @@ static void ensure_page(Reader *r, int page) {
 
 bool reader_finish_step(Reader *r) {
 	if (!r->open || r->laid) return false;
-	ct_fill_more(&r->text, READER_STEP_BYTES * 2);
+	ct_fill_more(&r->text, READER_IDLE_BYTES);
 	paginate_more(r);
 	return true;
 }
@@ -291,7 +294,7 @@ bool reader_next(Reader *r) {
 		return true;
 	}
 	if (ct_has_next(&r->text)) { // (the window is laid out whole here)
-		ct_next_window_lazy(&r->text);
+		ct_next_window_lazy(&r->text, CT_FIRST_SLACK);
 		start_window(r);
 		show_page(r, 0);
 		return true;
@@ -606,6 +609,30 @@ static int count_window(const Reader *r, const ChapterText *ct) {
 	return n;
 }
 
+// The window of the counter that is being read and counted in small steps (decision 113).
+static PageStart counter_next;
+static int counter_win_pages;
+static bool counter_laid;
+
+static void counter_start_window(void) {
+	counter_next = layout_first_page();
+	counter_win_pages = 0;
+	counter_laid = false;
+}
+
+// Counts the pages of the text read so far that are final (as paginate_more does).
+static void counter_count_more(const Reader *r) {
+	while (counter_win_pages < READER_PAGES_MAX) {
+		layout_page(counter.buf, counter.len, counter_next, r->cols, r->rows, &r->style, &scratch);
+		if (scratch.at_end && counter.window_open) return; // the end of what is read, not of the window
+		counter_win_pages++;
+		if (scratch.at_end) break;
+		counter_next = scratch.next;
+	}
+	ct_complete(&counter);
+	counter_laid = true;
+}
+
 // The chapter to count next: the first unknown one before the current chapter, else the first after it.
 static int next_unknown(const Reader *r) {
 	for (int i = 0; i < r->book.chapter_count; i++) {
@@ -618,6 +645,8 @@ static int next_unknown(const Reader *r) {
 	return r->chapter_pages[r->chapter] == 0 ? r->chapter : -1;
 }
 
+// One small step of counting (decision 055, in smaller pieces by decision 113): open a chapter, or read a few KB of its
+// window and count the pages that are final, or go on to the next window, or finish the chapter.
 bool reader_count_step(Reader *r) {
 	if (!r->open || !r->chapter_pages) return false;
 
@@ -625,8 +654,7 @@ bool reader_count_step(Reader *r) {
 		int c = next_unknown(r);
 		if (c < 0) return false;
 		if (!has_text(r, c)) return true; // marked as having no text
-		memset(&counter, 0, sizeof counter);
-		if (!ct_open(&counter, &r->book, c, 0)) {
+		if (!ct_open_start(&counter, &r->book, c)) {
 			r->chapter_pages[c] = READER_NO_TEXT; // it cannot be read, so it counts no pages (and is not tried again)
 			r->pages_changed = true;
 			return true;
@@ -634,18 +662,25 @@ bool reader_count_step(Reader *r) {
 		counter_open = true;
 		counter_chapter = c;
 		counter_sum = 0;
-	} else if (!ct_next_window(&counter)) {
-		counter_close(); // it could not go on: start this chapter again next time
+		counter_start_window();
 		return true;
 	}
 
-	counter_sum += (uint32_t)count_window(r, &counter);
+	ct_fill_more(&counter, READER_IDLE_BYTES);
+	counter_count_more(r);
+	if (!counter_laid) return true;
+
+	counter_sum += (uint32_t)counter_win_pages;
 	if (!ct_has_next(&counter)) {
 		uint16_t n = counter_sum >= READER_NO_TEXT ? READER_NO_TEXT - 1 : (uint16_t)counter_sum;
 		if (n == 0) n = 1;
 		r->chapter_pages[counter_chapter] = n;
 		r->pages_changed = true;
 		counter_close();
+	} else if (!ct_next_window_lazy(&counter, 0)) {
+		counter_close(); // it could not go on: start this chapter again next time
+	} else {
+		counter_start_window();
 	}
 	return true;
 }
