@@ -77,6 +77,10 @@ void epub_chapter_close(EpubChapter *chapter);
 // first word.
 bool epub_chapter_has_text(Epub *book, int index);
 
+// True if chapter `index` starts with a picture that gets a page, before any word: its path in the zip and its header
+// are given (as epub_image_info gives them). Used to decode that picture ahead of time (decision 115).
+bool epub_chapter_lead_image(Epub *book, int index, char *path, size_t cap, ImageInfo *info);
+
 // Pictures (decision 075). `src` is the link as written in chapter `chapter`. Finds the
 // picture in the zip, gives its path inside the zip in `path` and its header in `info`.
 // False for a text book, a missing file or a format that is not a picture.

@@ -10,10 +10,15 @@
 #define HYPHEN_LEFT_MIN 2    // letters before the first hyphen (TeX's \lefthyphenmin for American English)
 #define HYPHEN_RIGHT_MIN 3   // letters after the last one
 
-// The data (hyph_en.c, made by tools/make_hyphen.py).
-extern const int hyph_max_pattern;
-extern const char *const hyph_patterns[];
-extern const int hyph_pattern_count;
+// The data (hyph_en.c, made by tools/make_hyphen.py): the patterns as a trie (decision 114). Node 0 is the root; the
+// children of node i are the nodes hyph_first[i] up to hyph_first[i + 1], sorted by their letter hyph_char; when a
+// pattern ends at a node, hyph_value is where its numbers start in hyph_digits (one for each place before, between and
+// after its letters), otherwise 0.
+extern const int hyph_node_count;
+extern const uint8_t hyph_char[];
+extern const uint16_t hyph_first[];
+extern const uint16_t hyph_value[];
+extern const uint8_t hyph_digits[];
 extern const char *const hyph_exceptions[];
 extern const int hyph_exception_count;
 

@@ -490,6 +490,27 @@ bool reader_page_marked(const Reader *r, int slot, const BookMarks *marks) {
 	return marks_count_range(marks, r->chapter, from, to) > 0;
 }
 
+const CtImage *reader_next_picture(Reader *r) {
+	if (!r->open || r->view_count == 0) return NULL;
+	uint32_t after = r->view[r->view_count - 1].next.offset; // where the page after the ones shown starts, in the window
+	for (int i = 0; i < r->text.image_count; i++) {
+		if (r->text.images[i].offset >= after) return &r->text.images[i]; // (they are in the order of the text)
+	}
+	// The last page of the chapter is shown: the next page is the first one of the following chapter, which may be a
+	// picture (a chapter heading that is drawn, a plate that is a file of its own).
+	if (!r->laid || ct_has_next(&r->text) || r->page + r->per_view < r->page_count) return NULL;
+	if (r->lead_for != r->chapter + 1) {
+		r->lead_for = r->chapter + 1;
+		r->lead_found = false;
+		int next = find_chapter(r, r->chapter, 1);
+		if (next >= 0) {
+			memset(&r->lead, 0, sizeof r->lead);
+			r->lead_found = epub_chapter_lead_image(&r->book, next, r->lead.path, sizeof r->lead.path, &r->lead.info);
+		}
+	}
+	return r->lead_found ? &r->lead : NULL;
+}
+
 void reader_set_notice(Reader *r, const char *text) {
 	snprintf(r->notice, sizeof r->notice, "%s", text);
 	r->redraw = true;

@@ -51,21 +51,35 @@ static uint32_t div_by(uint32_t a, uint32_t n, uint64_t inv) {
 	return q;
 }
 
+// 2^32 / n rounded up, for div_by. A division of 64 bits is slow on the ARM9, and the number of pixels in a sum is
+// one of four at most (two numbers of columns times two numbers of rows) that take turns from one pixel to the
+// next when the picture is not shrunk by a whole number: the last four are kept (decision 114).
+static uint64_t reciprocal(PicSink *ps, uint32_t n) {
+	for (int i = 0; i < 4; i++) {
+		if (ps->inv_n[i] == n) return ps->inv[i];
+	}
+	int slot = ps->inv_next;
+	ps->inv_next = (slot + 1) & 3;
+	ps->inv_n[slot] = n;
+	ps->inv[slot] = 0xFFFFFFFFull / n + 1;
+	return ps->inv[slot];
+}
+
 static bool flush(PicSink *ps) {
 	if (ps->cur < 0) return true;
-	// The averages are sums divided by the number of pixels summed, which is the same for nearly every pixel of a
-	// row: the reciprocal is worked out when the number changes and the division is a multiplication (the ARM9 has no
-	// divide instruction, decision 112). The result is exactly the quotient.
+	// The averages are sums divided by the number of pixels summed: the division is a multiplication with the
+	// reciprocal of that number (the ARM9 has no divide instruction, decision 112). The result is exactly the quotient.
 	uint32_t last_n = 0;
 	uint64_t inv = 0;
-	for (int x = 0; x < ps->dst_w; x++) {
+	const uint32_t *acc = ps->acc;
+	for (int x = 0; x < ps->dst_w; x++, acc += 3) {
 		uint32_t n = (uint32_t)ps->col_count[x] * (uint32_t)ps->rows_in;
 		if (n == 0) n = 1;
 		if (n != last_n) {
 			last_n = n;
-			inv = 0xFFFFFFFFull / n + 1; // 2^32 / n rounded up
+			inv = reciprocal(ps, n);
 		}
-		int r = (int)div_by(ps->acc[x * 3], n, inv), g = (int)div_by(ps->acc[x * 3 + 1], n, inv), b = (int)div_by(ps->acc[x * 3 + 2], n, inv);
+		int r = (int)div_by(acc[0], n, inv), g = (int)div_by(acc[1], n, inv), b = (int)div_by(acc[2], n, inv);
 		ps->line[x] = (uint8_t)(PIC_PAL_BASE + picsink_index(r, g, b, x, ps->cur));
 	}
 	int y = ps->cur;
@@ -96,23 +110,42 @@ static bool sink_begin(void *user, int w, int h) {
 	ps->dst_h = dh;
 
 	ps->acc = calloc((size_t)dw * 3, sizeof *ps->acc);
-	ps->col = malloc((size_t)w * sizeof *ps->col);
 	ps->col_count = calloc((size_t)dw, sizeof *ps->col_count);
 	ps->line = malloc((size_t)dw);
-	if (!ps->acc || !ps->col || !ps->col_count || !ps->line) return false;
-	for (int x = 0; x < w; x++) {
-		int d = (int)((int64_t)x * dw / w);
-		ps->col[x] = (uint16_t)d;
+	if (!ps->acc || !ps->col_count || !ps->line) return false;
+	// Picture column x goes to output column x * dw / w (rounded down): the columns of one output column follow each
+	// other, so their number is all that is kept. Counted without a division for each column.
+	for (int x = 0, d = 0, rem = 0; x < w; x++) {
 		ps->col_count[d]++;
+		rem += dw;
+		while (rem >= w) {
+			rem -= w;
+			d++;
+		}
 	}
 	ps->cur = -1;
+	ps->last_y = -2;
 	if (ps->put_size) ps->put_size(ps->user, dw, dh);
 	return true;
 }
 
 static bool sink_row(void *user, int y, const uint8_t *rgb) {
 	PicSink *ps = user;
-	int dy = (int)((int64_t)y * ps->dst_h / ps->src_h);
+	// The output row is y * dst_h / src_h. The rows come one after the other, so it follows from the row before.
+	int dy;
+	if (y == ps->last_y + 1 && ps->cur >= 0) {
+		dy = ps->cur;
+		ps->last_rem += ps->dst_h;
+		while (ps->last_rem >= ps->src_h) {
+			ps->last_rem -= ps->src_h;
+			dy++;
+		}
+	} else {
+		int64_t at = (int64_t)y * ps->dst_h;
+		dy = (int)(at / ps->src_h);
+		ps->last_rem = (int)(at % ps->src_h);
+	}
+	ps->last_y = y;
 	if (ps->cur >= 0 && dy != ps->cur) {
 		if (!flush(ps)) {
 			ps->stopped = 1;
@@ -121,11 +154,19 @@ static bool sink_row(void *user, int y, const uint8_t *rgb) {
 	}
 	ps->cur = dy;
 	ps->rows_in++;
-	for (int x = 0; x < ps->src_w; x++) {
-		uint32_t *a = &ps->acc[ps->col[x] * 3];
-		a[0] += rgb[x * 3];
-		a[1] += rgb[x * 3 + 1];
-		a[2] += rgb[x * 3 + 2];
+	// The picture columns of each output column are summed in one go, and stored once (decision 114).
+	uint32_t *a = ps->acc;
+	const uint16_t *count = ps->col_count;
+	for (int d = 0; d < ps->dst_w; d++, a += 3) {
+		uint32_t r = a[0], g = a[1], b = a[2];
+		for (int c = count[d]; c > 0; c--, rgb += 3) {
+			r += rgb[0];
+			g += rgb[1];
+			b += rgb[2];
+		}
+		a[0] = r;
+		a[1] = g;
+		a[2] = b;
 	}
 	return true;
 }
@@ -151,11 +192,9 @@ bool picsink_finish(PicSink *ps) {
 
 void picsink_close(PicSink *ps) {
 	free(ps->acc);
-	free(ps->col);
 	free(ps->col_count);
 	free(ps->line);
 	ps->acc = NULL;
-	ps->col = NULL;
 	ps->col_count = NULL;
 	ps->line = NULL;
 }

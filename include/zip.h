@@ -31,6 +31,9 @@ typedef struct {
 	uint32_t dir_size;
 	uint16_t entry_count;
 	uint8_t *dir;        // the whole central directory in memory (decision 107), NULL if it is too big: entries are then read from the file
+	uint32_t size;       // of the archive file, in bytes
+	uint32_t find_pos;   // where zip_find starts looking: after the entry it found last (decision 116)
+	uint16_t find_index;
 } Zip;
 
 // A central directory up to this size is kept in memory while the archive is open.
@@ -50,7 +53,9 @@ void zip_iter_start(const Zip *zip, ZipIter *iter);
 // whose names are too long for ZIP_NAME_MAX are skipped.
 bool zip_iter_next(Zip *zip, ZipIter *iter, ZipEntry *entry);
 
-// Finds an entry by its exact, case sensitive name, such as "META-INF/container.xml".
+// Finds an entry by its exact, case sensitive name, such as "META-INF/container.xml". The search starts after the
+// entry found last and goes round, so files asked for in the order they have in the archive (the chapters of a book,
+// the pictures of a chapter) are each found at once.
 bool zip_find(Zip *zip, const char *name, ZipEntry *entry);
 
 // Reads the contents of one entry in pieces. Many streams can be open at once.

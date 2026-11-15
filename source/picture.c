@@ -17,8 +17,10 @@ typedef struct {
 
 static CacheEntry cache[CACHE_ENTRIES];
 static uint32_t cache_clock;
+static char failed_path[EPUB_PATH_MAX]; // a picture that could not be decoded ahead of time: not tried again (decision 115)
 
 void picture_cache_clear(void) {
+	failed_path[0] = '\0';
 	for (int i = 0; i < CACHE_ENTRIES; i++) {
 		free(cache[i].pixels);
 		cache[i].pixels = NULL;
@@ -83,6 +85,27 @@ static size_t read_zip(void *user, uint8_t *buf, size_t cap) {
 	return n < 0 ? 0 : (size_t)n;
 }
 
+// A sink in front of the real one that asks whether to stop before every row of the picture (decision 115).
+typedef struct {
+	ImageSink inner;
+	bool (*stop)(void *user);
+	void *user;
+} StopSink;
+
+static bool stop_begin(void *u, int w, int h) {
+	StopSink *s = u;
+	return s->inner.begin(s->inner.user, w, h);
+}
+
+static bool stop_row(void *u, int y, const uint8_t *rgb) {
+	StopSink *s = u;
+	if (s->stop(s->user)) return false;
+	return s->inner.row(s->inner.user, y, rgb);
+}
+
+static DecResult decode(Epub *book, const CtImage *image, int area_w, int area_h, PicRowFn put_row,
+                        PicSizeFn put_size, void *user, bool (*stop)(void *user), void *stop_user);
+
 DecResult picture_decode(Epub *book, const CtImage *image, int area_w, int area_h, PicRowFn put_row,
                          PicSizeFn put_size, void *user) {
 	if (image->info.kind == IMAGE_JPEG && image->info.progressive) return DEC_UNSUPPORTED;
@@ -96,7 +119,38 @@ DecResult picture_decode(Epub *book, const CtImage *image, int area_w, int area_
 		}
 		return DEC_OK;
 	}
+	return decode(book, image, area_w, area_h, put_row, put_size, user, NULL, NULL);
+}
 
+static bool no_row(void *user, int y, int w, const uint8_t *idx) {
+	(void)user;
+	(void)y;
+	(void)w;
+	(void)idx;
+	return true;
+}
+
+bool picture_cached(const CtImage *image, int area_w, int area_h) {
+	return image && cache_find(image->path, area_w, area_h) != NULL;
+}
+
+DecResult picture_prefetch(Epub *book, const CtImage *image, int area_w, int area_h, bool (*stop)(void *user), void *user) {
+	if (!image) return DEC_BAD;
+	if (image->info.kind == IMAGE_JPEG && image->info.progressive) return DEC_UNSUPPORTED;
+	if (cache_find(image->path, area_w, area_h)) return DEC_OK;
+	if (failed_path[0] && strcmp(failed_path, image->path) == 0) return DEC_BAD;
+	DecResult result = decode(book, image, area_w, area_h, no_row, NULL, NULL, stop, user);
+	// A picture that cannot be decoded, or that could not be kept (no memory for it), would be decoded again in every
+	// idle moment: it is left for when its page is shown.
+	if ((result != DEC_OK && result != DEC_STOPPED) || (result == DEC_OK && !cache_find(image->path, area_w, area_h))) {
+		snprintf(failed_path, sizeof failed_path, "%s", image->path);
+	}
+	return result;
+}
+
+// Decodes a picture that is not in the cache, and puts it there.
+static DecResult decode(Epub *book, const CtImage *image, int area_w, int area_h, PicRowFn put_row,
+                        PicSizeFn put_size, void *user, bool (*stop)(void *user), void *stop_user) {
 	Tee tee = { put_row, put_size, user, NULL, image, area_w, area_h };
 	put_row = tee_row;
 	put_size = tee_size;
@@ -108,6 +162,12 @@ DecResult picture_decode(Epub *book, const CtImage *image, int area_w, int area_
 	PicSink ps;
 	ImageSink sink;
 	picsink_init(&ps, area_w, area_h, put_row, put_size, user, &sink);
+	StopSink stopper = { sink, stop, stop_user };
+	if (stop) {
+		sink.user = &stopper;
+		sink.begin = stop_begin;
+		sink.row = stop_row;
+	}
 	DecResult result;
 	if (image->info.kind == IMAGE_PNG) result = png_decode(read_zip, &rd, &image->info, &sink);
 	else {

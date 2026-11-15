@@ -336,12 +336,20 @@ EpubResult epub_open(Epub *book, const char *path) {
 	if (txt_is_path(path)) return txt_open(book, path); // a plain text book (decision 074)
 	memset(book, 0, sizeof *book);
 
-	EpubResult check = epub_check(path);
-	if (check != EPUB_OK) return check;
-	if (!zip_open(&book->zip, path)) return EPUB_ERR_NOT_ZIP;
+	// The file is opened once (decision 116): when that fails epub_check says why, and the test it makes of the first
+	// bytes is made here on the open file. Every time a file is opened by its name the card's folder is searched.
+	if (!zip_open(&book->zip, path)) {
+		EpubResult check = epub_check(path);
+		return check != EPUB_OK ? check : EPUB_ERR_NOT_ZIP;
+	}
+	unsigned char head[4];
+	if (fseek(book->zip.file, 0, SEEK_SET) != 0 || fread(head, 1, sizeof head, book->zip.file) != sizeof head ||
+	    head[0] != 'P' || head[1] != 'K' || head[2] != 3 || head[3] != 4) {
+		zip_close(&book->zip);
+		return EPUB_ERR_NOT_ZIP;
+	}
 	snprintf(book->path, sizeof book->path, "%s", path);
-	long fsize = storage_file_size(path);
-	book->file_size = fsize > 0 ? (uint32_t)fsize : 0;
+	book->file_size = book->zip.size;
 
 	EpubResult result;
 	Package pkg;
@@ -472,13 +480,16 @@ void epub_chapter_close(EpubChapter *chapter) {
 	zip_stream_close(&chapter->stream);
 }
 
+// A chapter that is only looked into (the two functions below): too big for the stack, and one for both.
+static EpubChapter probe;
+
 bool epub_chapter_has_text(Epub *book, int index) {
-	static EpubChapter chapter; // too big for the stack
-	if (!epub_chapter_open(book, index, &chapter)) return false;
+	if (!epub_chapter_open(book, index, &probe)) return false;
+	EpubChapter *chapter = &probe;
 
 	bool found = false;
 	TextItem item;
-	while (!found && epub_chapter_next(&chapter, &item)) {
+	while (!found && epub_chapter_next(chapter, &item)) {
 		if (item.kind == TEXT_WORD) found = true;
 		if (item.kind == TEXT_IMAGE) {
 			char path[EPUB_PATH_MAX];
@@ -488,7 +499,23 @@ bool epub_chapter_has_text(Epub *book, int index) {
 			}
 		}
 	}
-	epub_chapter_close(&chapter);
+	epub_chapter_close(chapter);
+	return found;
+}
+
+bool epub_chapter_lead_image(Epub *book, int index, char *path, size_t cap, ImageInfo *info) {
+	if (book->txt || !epub_chapter_open(book, index, &probe)) return false;
+	EpubChapter *chapter = &probe;
+
+	bool found = false;
+	TextItem item;
+	while (!found && epub_chapter_next(chapter, &item)) {
+		if (item.kind == TEXT_WORD) break; // text comes first
+		if (item.kind == TEXT_IMAGE && epub_image_info(book, index, item.text, path, cap, info) && image_wanted(info->width, info->height)) {
+			found = true;
+		}
+	}
+	epub_chapter_close(chapter);
 	return found;
 }
 

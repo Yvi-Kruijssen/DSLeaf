@@ -193,6 +193,14 @@ static bool scan_text(TextExtractor *tx, TextItem *item) {
 			memcpy(tx->word + tx->word_len, ch, (size_t)n);
 			tx->word_len += n;
 			tx->scan += (size_t)n;
+			// The rest of a run of plain ASCII letters belongs to the same word (decision 114): each of them would
+			// take the same path through this switch.
+			while (tx->scan < len && tx->word_len < TEXTX_WORD_MAX) {
+				unsigned char c = (unsigned char)text[tx->scan];
+				if (c <= ' ' || c >= 0x80) break;
+				tx->word[tx->word_len++] = (char)c;
+				tx->scan++;
+			}
 			break;
 		}
 	}

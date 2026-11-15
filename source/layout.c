@@ -164,6 +164,12 @@ static int to_glyphs(const uint8_t *text, int bytes, Glyph *out, int scripts) {
 	const char *end = p + bytes;
 	int n = 0;
 	while (p < end && n + 3 <= GLYPHS_MAX) {
+		uint8_t c = (uint8_t)*p;
+		if (c >= 0x20 && c < 0x7F) { // plain ASCII is its own glyph: most of an English book (decision 114)
+			out[n++] = c;
+			p++;
+			continue;
+		}
 		Glyph g[3];
 		int count = text_utf8_next_ext(&p, g, scripts);
 		for (int i = 0; i < count; i++) out[n++] = g[i];
@@ -238,6 +244,9 @@ static int break_point(const Glyph *g, int pos, int total, int avail, bool *soft
 	*soft = false;
 	if (visible_width(g, pos, total) <= avail) return total;
 	bool auto_pt[GLYPHS_MAX + 1];
+	// A hyphenation point has at least two glyphs and its hyphen in front of it: with fewer than three columns left none
+	// fits, so the patterns are not looked up (decision 114).
+	if (avail < HYPHEN_LEFT_MIN + 1) hyphenate = false;
 	if (hyphenate) auto_points(g, total, auto_pt);
 	else auto_pt[0] = false;
 	int best = -1;

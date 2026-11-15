@@ -222,6 +222,18 @@ static bool read_text(XmlReader *r, int first) {
 		} else {
 			sink_byte(&s, (char)c);
 		}
+		// Plain text is copied straight from the buffer, up to the next tag or entity (decision 114): the same
+		// bytes as taking them one at a time below, which still does the ends of the buffer and of the piece.
+		if (r->pushed < 0) {
+			size_t pos = r->pos;
+			while (pos < r->len && s.len < XML_TEXT_MAX - 8) {
+				uint8_t b = r->buf[pos];
+				if (b == '<' || b == '&') break;
+				s.buf[s.len++] = (char)b;
+				pos++;
+			}
+			r->pos = pos;
+		}
 		c = rd(r);
 		if (c < 0) break;
 		// Start a new piece at a character boundary when this one is nearly full.

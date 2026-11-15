@@ -111,13 +111,21 @@ static int entropy_byte(Dec *d) {
 }
 
 // Fills the bit buffer (kept in locals by the block decoder) up to at least 25 bits. The common case, bytes that
-// are in the buffer and not 0xFF, does not leave the loop.
+// are in the buffer and not 0xFF, does not leave the loop and reads through the local pointers `in` and `in_end` (the
+// part of the buffer that may be read that way: empty once a marker was met). Anything else goes through
+// entropy_byte, after which the pointers are set again.
 #define REFILL(d, bb, bc)                                                           \
 	do {                                                                            \
 		while ((bc) <= 24) {                                                        \
 			int b_;                                                                 \
-			if ((d)->pos < (d)->len && !(d)->marker && (d)->buf[(d)->pos] != 0xFF) b_ = (d)->buf[(d)->pos++]; \
-			else b_ = entropy_byte(d);                                              \
+			if (in < in_end && *in != 0xFF) {                                       \
+				b_ = *in++;                                                         \
+			} else {                                                                \
+				(d)->pos = (size_t)(in - (d)->buf);                                 \
+				b_ = entropy_byte(d);                                               \
+				in = (d)->buf + (d)->pos;                                           \
+				in_end = (d)->marker ? in : (d)->buf + (d)->len;                    \
+			}                                                                       \
 			(bb) |= (uint32_t)b_ << (24 - (bc));                                    \
 			(bc) += 8;                                                              \
 		}                                                                           \
@@ -182,13 +190,19 @@ static int decode_long(const Huff *h, uint32_t bb, int *len) {
 // those are cleared first). Returns false if the data is bad. *rows is one more than the highest row that has a
 // coefficient, and *only_dc is true when there is nothing but the DC value, so the inverse DCT can take shortcuts.
 // The bit buffer lives in local variables while the block is decoded (decision 112).
-static bool decode_block(Dec *d, Comp *c, int n, int16_t out[64], int *rows, bool *only_dc) {
-	for (int v = 0; v < n; v++) memset(out + v * 8, 0, (size_t)n * sizeof(int16_t));
+static bool decode_block(Dec *d, Comp *c, int n, int kmax, int16_t out[64], int *rows, bool *only_dc) {
+	// Whole rows of the corner are cleared, with plain stores: the compiler turned a memset of this size into a call
+	// for every row of every block, 7 per cent of the time of a picture on the DS (decision 114).
+	for (int16_t *p = out, *end = out + n * 8; p < end; p += 8) {
+		p[0] = 0; p[1] = 0; p[2] = 0; p[3] = 0;
+		p[4] = 0; p[5] = 0; p[6] = 0; p[7] = 0;
+	}
 	const Huff *dc = &d->dc[c->dc_table], *ac = &d->ac[c->ac_table];
 	const uint32_t *fast_ac = d->ac_fast[c->ac_table];
 	const uint16_t *q = d->qt[c->tq];
 	uint32_t bb = d->bitbuf;
 	int bc = d->bitcnt;
+	const uint8_t *in = d->buf + d->pos, *in_end = d->marker ? in : d->buf + d->len;
 	int maxrow = 0;
 	bool any_ac = false;
 
@@ -214,7 +228,8 @@ static bool decode_block(Dec *d, Comp *c, int n, int16_t out[64], int *rows, boo
 	int dcv = c->pred * q[0];
 	out[0] = (int16_t)(dcv > 2047 ? 2047 : (dcv < -2047 ? -2047 : dcv));
 
-	for (int k = 1; k < 64;) {
+	int k = 1;
+	for (; k <= kmax;) {
 		if (bc < 25) REFILL(d, bb, bc);
 		uint32_t fa = fast_ac[bb >> 23];
 		if (fa) { // a short code with its value: the common case
@@ -272,6 +287,35 @@ static bool decode_block(Dec *d, Comp *c, int n, int16_t out[64], int *rows, boo
 		bc -= s;
 		k++;
 	}
+	// The coefficients after the last one the reduced size uses (most of a block, at 1/8 all but the first) are only
+	// stepped over: their codes and extra bits are taken from the stream and nothing else is done (decision 114).
+	// The loop above ends at its `break` with k <= kmax, which is the end of the block.
+	while (k > kmax && k < 64) {
+		if (bc < 25) REFILL(d, bb, bc);
+		e = ac->look[bb >> 23];
+		int rs;
+		if (e) {
+			l = e >> 8;
+			rs = e & 0xFF;
+		} else if ((rs = decode_long(ac, bb, &l)) < 0) {
+			return false;
+		}
+		bb <<= l;
+		bc -= l;
+		int s = rs & 15;
+		if (s == 0) {
+			if ((rs >> 4) != 15) break;
+			k += 16;
+			continue;
+		}
+		k += rs >> 4;
+		if (k > 63) return false;
+		if (bc < s) REFILL(d, bb, bc);
+		bb <<= s;
+		bc -= s;
+		k++;
+	}
+	d->pos = (size_t)(in - d->buf);
 	d->bitbuf = bb;
 	d->bitcnt = bc;
 	*rows = maxrow + 1;
@@ -287,7 +331,17 @@ static void idct(const int16_t *f, int n, uint8_t *dst, int stride, int rows, bo
 	if (only_dc) { // every pixel gets the same value (the first column of every table is 1448)
 		int tmp0 = (1448 * f[0]) >> 9;
 		uint8_t px = clamp8(((1448 * tmp0 + (1 << 14)) >> 15) + 128);
-		for (int y = 0; y < n; y++) memset(dst + y * stride, px, (size_t)n);
+		if (n == 1) {
+			dst[0] = px;
+		} else if (n == 2) {
+			dst[0] = dst[1] = px;
+			dst[stride] = dst[stride + 1] = px;
+		} else { // 4 or 8, with plain stores (a memset of this size is a call)
+			for (int y = 0; y < n; y++, dst += stride) {
+				dst[0] = px; dst[1] = px; dst[2] = px; dst[3] = px;
+				if (n == 8) { dst[4] = px; dst[5] = px; dst[6] = px; dst[7] = px; }
+			}
+		}
 		return;
 	}
 	if (n == 2) {
@@ -300,7 +354,8 @@ static void idct(const int16_t *f, int n, uint8_t *dst, int stride, int rows, bo
 		return;
 	}
 	if (n == 4) { // the same sums as the table below, with the symmetry of the cosines used (the results are the same)
-		int tmp[4][4] = { { 0 } };
+		int tmp[4][4];
+		for (int v = rows; v < 4; v++) tmp[v][0] = tmp[v][1] = tmp[v][2] = tmp[v][3] = 0; // (not a memset call for every block)
 		for (int v = 0; v < rows; v++) {
 			const int16_t *row = f + v * 8;
 			int e0 = 1448 * (row[0] + row[2]), e1 = 1448 * (row[0] - row[2]);
@@ -517,6 +572,9 @@ DecResult jpeg_decode(ImageReadFn read, void *read_user, const ImageInfo *info, 
 		}
 	}
 	int ow = (fr.width * n + 7) / 8, oh = (fr.height * n + 7) / 8;
+	// The last coefficient, in the order of the file, that lies in the n x n corner this size uses.
+	int kmax = 63;
+	while (kmax > 0 && ((zigzag[kmax] & 7) >= n || (zigzag[kmax] >> 3) >= n)) kmax--;
 
 	int hmax = 1, vmax = 1;
 	for (int i = 0; i < fr.ncomp; i++) {
@@ -547,6 +605,8 @@ DecResult jpeg_decode(ImageReadFn read, void *read_user, const ImageInfo *info, 
 		for (int x = 0; x < ow; x++) xmap[i][x] = (uint16_t)(x * fr.comp[i].h / hmax);
 	}
 	if (fr.ncomp == 3) init_ycc_tables();
+	// Luma at full width and both chroma components at half of it (4:2:0 and 4:2:2, nearly every colour JPEG).
+	bool half_chroma = fr.ncomp == 3 && fr.comp[0].h == 2 && hmax == 2 && fr.comp[1].h == 1 && fr.comp[2].h == 1;
 
 	if (!sink->begin(sink->user, ow, oh)) { result = DEC_STOPPED; goto done; }
 
@@ -572,7 +632,7 @@ DecResult jpeg_decode(ImageReadFn read, void *read_user, const ImageInfo *info, 
 					for (int bx = 0; bx < c->h; bx++) {
 						int rows;
 						bool only_dc;
-						if (!decode_block(d, c, n, blk, &rows, &only_dc)) goto done;
+						if (!decode_block(d, c, n, kmax, blk, &rows, &only_dc)) goto done;
 						idct(blk, n, c->plane + (by * n) * c->plane_w + (mx * c->h + bx) * n, c->plane_w, rows, only_dc);
 					}
 				}
@@ -595,6 +655,24 @@ DecResult jpeg_decode(ImageReadFn read, void *read_user, const ImageInfo *info, 
 					o[0] = src[0][xmap[0][x]];
 					o[1] = src[1][xmap[1][x]];
 					o[2] = src[2][xmap[2][x]];
+				}
+			} else if (half_chroma) {
+				// The usual sampling: two pixels share one pair of chroma values, which are looked up once for both
+				// (the same sums as the loop below, decision 114).
+				const uint8_t *sy = src[0], *scb = src[1], *scr = src[2];
+				uint8_t *o = rgb;
+				for (int x = 0; x < ow; x += 2, o += 6) {
+					int cb = scb[x >> 1], cr = scr[x >> 1];
+					int dr = cr_to_r[cr], dg = (cb_to_g[cb] + cr_to_g[cr]) >> 16, db = cb_to_b[cb];
+					int Y = sy[x];
+					o[0] = clamp8(Y + dr);
+					o[1] = clamp8(Y - dg);
+					o[2] = clamp8(Y + db);
+					if (x + 1 >= ow) break;
+					Y = sy[x + 1];
+					o[3] = clamp8(Y + dr);
+					o[4] = clamp8(Y - dg);
+					o[5] = clamp8(Y + db);
 				}
 			} else {
 				for (int x = 0; x < ow; x++) {

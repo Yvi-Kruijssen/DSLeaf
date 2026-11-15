@@ -1,5 +1,6 @@
 #include "inflate.h"
 
+#include <stddef.h>
 #include <string.h>
 
 #define WMASK (INFLATE_WINDOW - 1)
@@ -24,7 +25,9 @@ static const uint8_t dist_extra[30] = {
 };
 
 void inflate_init(Inflate *s, InflateReadFn read, void *user) {
-	memset(s, 0, sizeof *s);
+	// The input buffer, the window and the tables are written before they are read (a distance is checked against
+	// the bytes produced so far), so the 40 KB of them are not cleared for every file that is opened.
+	memset(s, 0, offsetof(Inflate, inbuf));
 	s->read = read;
 	s->user = user;
 	s->state = ST_HEADER;
@@ -292,6 +295,81 @@ int inflate_read(Inflate *s, uint8_t *out, size_t cap) {
 			break;
 
 		case ST_CODES: {
+			// The usual case, as one tight loop (decision 114): while there are 8 bytes of input in the buffer (more
+			// than one literal or match can use) the bits are kept in local variables and nothing has to be checked
+			// for the end of the input. A code that is not in the tables, a match that does not fit in what the
+			// caller asked for, and the last bytes of the input leave the loop for the careful code below.
+			if (s->in_len - s->in_pos >= 8) {
+				const uint8_t *in = s->inbuf;
+				size_t ip = s->in_pos, in_safe = s->in_len - 8;
+				uint32_t bb = s->bitbuf, wpos = s->wpos;
+				int bc = s->bitcnt;
+				size_t n0 = n;
+				bool bad = false;
+				uint8_t *window = s->window;
+				const uint16_t *lfast = s->lfast, *dfast = s->dfast;
+				while (n < cap && ip <= in_safe) {
+					while (bc <= 24) {
+						bb |= (uint32_t)in[ip++] << bc;
+						bc += 8;
+					}
+					unsigned e = lfast[bb & ((1u << INFLATE_LIT_BITS) - 1)];
+					if (e == 0) break; // a long code
+					int symbol = (int)(e >> 4);
+					if (symbol < 256) {
+						bb >>= e & 15;
+						bc -= (int)(e & 15);
+						window[wpos++ & WMASK] = (uint8_t)symbol;
+						out[n++] = (uint8_t)symbol;
+						continue;
+					}
+					if (symbol == 256) break; // the end of the block: left to the code below
+					symbol -= 257;
+					if (symbol >= 29) break;  // (the code below reports it)
+					// At least 25 bits: the code (10 at most) and the extra bits of the length (5 at most).
+					uint32_t b2 = bb >> (e & 15);
+					int c2 = bc - (int)(e & 15);
+					int len = len_base[symbol] + (int)(b2 & ((1u << len_extra[symbol]) - 1));
+					b2 >>= len_extra[symbol];
+					c2 -= len_extra[symbol];
+					size_t ip2 = ip;
+					while (c2 <= 24) {
+						b2 |= (uint32_t)in[ip2++] << c2;
+						c2 += 8;
+					}
+					unsigned d = dfast[b2 & ((1u << INFLATE_DIST_BITS) - 1)];
+					if (d == 0 || (size_t)len > cap - n) break; // a long code, or no room: nothing of the match is used up yet
+					int dsym = (int)(d >> 4);
+					if (dsym >= 30) break;
+					b2 >>= d & 15;
+					c2 -= (int)(d & 15);
+					// At least 18 bits are left: the extra bits of the distance are 13 at most.
+					uint32_t dist = dist_base[dsym] + (b2 & ((1u << dist_extra[dsym]) - 1));
+					b2 >>= dist_extra[dsym];
+					c2 -= dist_extra[dsym];
+					bb = b2;
+					bc = c2;
+					ip = ip2;
+					if (dist > s->total + (uint32_t)(n - n0) || dist > INFLATE_WINDOW) {
+						bad = true;
+						break;
+					}
+					uint32_t from = wpos - dist;
+					do {
+						uint8_t b = window[from++ & WMASK];
+						window[wpos++ & WMASK] = b;
+						out[n++] = b;
+					} while (--len > 0);
+				}
+				s->in_pos = ip;
+				s->bitbuf = bb;
+				s->bitcnt = bc;
+				s->wpos = wpos;
+				s->total += (uint32_t)(n - n0);
+				if (bad) return fail(s);
+				if (n >= cap) break;
+			}
+
 			int symbol = decode_fast(s, s->lfast, INFLATE_LIT_BITS, s->lcount, s->lsym);
 			if (symbol < 0) return fail(s);
 

@@ -2,31 +2,6 @@
 
 #include <string.h>
 
-// Compares a key (letters and dots) with a pattern written with digits between its letters: the digits are skipped.
-// Returns <0, 0 or >0 like strcmp, treating the end of the key as the end of the pattern's letters.
-static int compare(const char *key, int len, const char *pat) {
-	int i = 0;
-	for (; *pat; pat++) {
-		if (*pat >= '0' && *pat <= '9') continue;
-		if (i >= len) return -1;       // the key ended first: it is smaller
-		if (key[i] != *pat) return (unsigned char)key[i] < (unsigned char)*pat ? -1 : 1;
-		i++;
-	}
-	return i == len ? 0 : 1;           // the pattern ended first: the key is larger
-}
-
-static const char *find_pattern(const char *key, int len) {
-	int lo = 0, hi = hyph_pattern_count - 1;
-	while (lo <= hi) {
-		int mid = (lo + hi) / 2;
-		int c = compare(key, len, hyph_patterns[mid]);
-		if (c == 0) return hyph_patterns[mid];
-		if (c < 0) hi = mid - 1;
-		else lo = mid + 1;
-	}
-	return NULL;
-}
-
 // An exception: the word with its hyphens marked, such as "as-so-ciate". Binary search by the letters.
 static const char *find_exception(const char *word, int n) {
 	int lo = 0, hi = hyph_exception_count - 1;
@@ -46,6 +21,19 @@ static const char *find_exception(const char *word, int n) {
 		else lo = mid + 1;
 	}
 	return NULL;
+}
+
+// The children of the root of the trie by letter (index 0 is the dot, 1 to 26 are a to z), 0 for none. Made on first use.
+static uint16_t root_child[27];
+static bool root_ready;
+
+static void build_root(void) {
+	for (int child = hyph_first[0]; child < hyph_first[1]; child++) {
+		uint8_t c = hyph_char[child];
+		if (c == '.') root_child[0] = (uint16_t)child;
+		else if (c >= 'a' && c <= 'z') root_child[c - 'a' + 1] = (uint16_t)child;
+	}
+	root_ready = true;
 }
 
 int hyphen_points(const char *word, int n, bool points[HYPHEN_WORD_MAX + 1]) {
@@ -78,17 +66,30 @@ int hyphen_points(const char *word, int n, bool points[HYPHEN_WORD_MAX + 1]) {
 	uint8_t value[HYPHEN_WORD_MAX + 4];
 	memset(value, 0, sizeof value);
 
+	// Every pattern that is in the word at `start` is on one path of the trie, so one walk finds them all: this was a
+	// binary search of the whole list for every length before, most of the time of laying out a page (decision 114).
+	if (!root_ready) build_root();
 	for (int start = 0; start < total; start++) {
-		for (int len = 1; len <= hyph_max_pattern && start + len <= total; len++) {
-			const char *pat = find_pattern(key + start, len);
-			if (!pat) continue;
-			// value[start + j] is the number before the j-th letter of the pattern (j = 0 to len).
-			int j = 0;
-			for (const char *p = pat; *p; p++) {
-				if (*p >= '0' && *p <= '9') {
-					if ((uint8_t)(*p - '0') > value[start + j]) value[start + j] = (uint8_t)(*p - '0');
-				} else {
-					j++;
+		int node = 0;
+		for (int depth = 1; start + depth <= total; depth++) {
+			uint8_t c = (uint8_t)key[start + depth - 1];
+			int child;
+			if (node == 0) { // the root has a child for nearly every letter: looked up, not searched
+				if (c != '.' && (c < 'a' || c > 'z')) break; // not a letter: no pattern has it
+				child = root_child[c == '.' ? 0 : c - 'a' + 1];
+				if (child == 0) break;
+			} else {
+				int end = hyph_first[node + 1];
+				child = hyph_first[node];
+				while (child < end && hyph_char[child] < c) child++;
+				if (child == end || hyph_char[child] != c) break;
+			}
+			node = child;
+			if (hyph_value[node]) {
+				// The pattern's numbers: digit[j] is the one before its j-th letter (j = 0 to depth).
+				const uint8_t *digit = hyph_digits + hyph_value[node];
+				for (int j = 0; j <= depth; j++) {
+					if (digit[j] > value[start + j]) value[start + j] = digit[j];
 				}
 			}
 		}

@@ -14,7 +14,7 @@ typedef struct {
 	uint32_t chunk_left;   // data bytes left in the current IDAT chunk
 	bool idat_done;
 	bool failed;
-	uint8_t buf[512];
+	uint8_t buf[2048]; // (512 before: a stored picture is read from the card in pieces of this size)
 	size_t buf_pos, buf_len;
 	bool eof;
 	bool zlib_header_done;
@@ -86,14 +86,23 @@ static size_t idat_read(void *user, uint8_t *out, size_t cap) {
 			}
 			continue;
 		}
-		int b = src_byte(s);
-		if (b < 0) {
-			s->idat_done = true;
-			s->failed = true;
-			break;
+		if (s->buf_pos == s->buf_len) { // fill the buffer (or find the end of the file)
+			int b = src_byte(s);
+			if (b < 0) {
+				s->idat_done = true;
+				s->failed = true;
+				break;
+			}
+			s->buf_pos--;
 		}
-		s->chunk_left--;
-		out[n++] = (uint8_t)b;
+		// As much of the chunk as is in the buffer, in one go (a byte at a time before, decision 114).
+		size_t take = s->buf_len - s->buf_pos;
+		if (take > s->chunk_left) take = s->chunk_left;
+		if (take > cap - n) take = cap - n;
+		memcpy(out + n, s->buf + s->buf_pos, take);
+		s->buf_pos += take;
+		s->chunk_left -= (uint32_t)take;
+		n += take;
 	}
 	return n;
 }
@@ -116,62 +125,85 @@ typedef struct {
 	int trns_grey;
 } Header;
 
-// Turns one unfiltered row of `w` pixels into RGB.
+// A pixel with transparency `a` over white.
+static inline uint8_t on_white(int v, int a) {
+	return (uint8_t)((v * a + 255 * (255 - a)) / 255);
+}
+
+// Turns one unfiltered row of `w` pixels into RGB. One loop for each kind of picture, so that nothing about the kind is
+// worked out again for every pixel (a palette picture of 1 to 4 bits took three divisions a pixel, decision 114).
 static void to_rgb(const Header *h, const uint8_t *raw, int w, uint8_t *rgb) {
 	int depth = h->depth;
-	for (int x = 0; x < w; x++) {
-		int r, g, b, a = 255;
-		switch (h->ctype) {
-		case 0: { // grey
-			int v;
-			if (depth == 16) v = raw[x * 2];
-			else if (depth == 8) v = raw[x];
-			else {
-				int per = 8 / depth, shift = (per - 1 - (x % per)) * depth;
-				int mask = (1 << depth) - 1;
-				v = (raw[x / per] >> shift) & mask;
-				if (h->have_trns_grey && v == h->trns_grey) a = 0;
-				v = v * 255 / mask;
-				r = g = b = v;
-				break;
+	// For samples smaller than a byte: 8 / depth of them in a byte, the first one in the high bits.
+	int per_shift = depth == 1 ? 3 : (depth == 2 ? 2 : (depth == 4 ? 1 : 0));
+	int per_mask = (1 << per_shift) - 1, mask = (1 << depth) - 1;
+
+	switch (h->ctype) {
+	case 0: // grey
+		if (depth >= 8) {
+			int step = depth == 16 ? 2 : 1;
+			for (int x = 0; x < w; x++, rgb += 3) rgb[0] = rgb[1] = rgb[2] = raw[x * step];
+		} else {
+			int scale = 255 / mask; // 255, 85 or 17: exact
+			for (int x = 0; x < w; x++, rgb += 3) {
+				int v = (raw[x >> per_shift] >> ((per_mask - (x & per_mask)) * depth)) & mask;
+				bool clear = h->have_trns_grey && v == h->trns_grey;
+				rgb[0] = rgb[1] = rgb[2] = clear ? 255 : (uint8_t)(v * scale);
 			}
-			r = g = b = v;
-			break;
 		}
-		case 2:
-			if (depth == 16) { r = raw[x * 6]; g = raw[x * 6 + 2]; b = raw[x * 6 + 4]; }
-			else { r = raw[x * 3]; g = raw[x * 3 + 1]; b = raw[x * 3 + 2]; }
-			break;
-		case 3: {
-			int per = 8 / depth, shift = (per - 1 - (x % per)) * depth;
-			int idx = depth == 8 ? raw[x] : (raw[x / per] >> shift) & ((1 << depth) - 1);
+		break;
+	case 2: // colour
+		if (depth == 16) {
+			for (int x = 0; x < w; x++, rgb += 3, raw += 6) {
+				rgb[0] = raw[0];
+				rgb[1] = raw[2];
+				rgb[2] = raw[4];
+			}
+		} else {
+			memcpy(rgb, raw, (size_t)w * 3);
+		}
+		break;
+	case 3: // palette
+		for (int x = 0; x < w; x++, rgb += 3) {
+			int idx = depth == 8 ? raw[x] : (raw[x >> per_shift] >> ((per_mask - (x & per_mask)) * depth)) & mask;
 			if (idx >= h->palette_count) idx = 0;
-			r = h->palette[idx][0]; g = h->palette[idx][1]; b = h->palette[idx][2];
-			a = h->trans[idx];
-			break;
+			const uint8_t *c = h->palette[idx];
+			int a = h->trans[idx];
+			if (a == 255) {
+				rgb[0] = c[0];
+				rgb[1] = c[1];
+				rgb[2] = c[2];
+			} else {
+				rgb[0] = on_white(c[0], a);
+				rgb[1] = on_white(c[1], a);
+				rgb[2] = on_white(c[2], a);
+			}
 		}
-		case 4: {
-			int step = depth == 16 ? 4 : 2;
-			r = g = b = raw[x * step];
-			a = raw[x * step + (depth == 16 ? 2 : 1)];
-			break;
+		break;
+	case 4: { // grey with transparency
+		int step = depth == 16 ? 4 : 2, ao = depth == 16 ? 2 : 1;
+		for (int x = 0; x < w; x++, rgb += 3, raw += step) {
+			int a = raw[ao];
+			rgb[0] = rgb[1] = rgb[2] = a == 255 ? raw[0] : on_white(raw[0], a);
 		}
-		default: { // 6
-			int step = depth == 16 ? 8 : 4;
-			int o = depth == 16 ? 2 : 1;
-			r = raw[x * step]; g = raw[x * step + o]; b = raw[x * step + 2 * o];
-			a = raw[x * step + 3 * o];
-			break;
+		break;
+	}
+	default: { // 6: colour with transparency
+		int step = depth == 16 ? 8 : 4, o = depth == 16 ? 2 : 1;
+		for (int x = 0; x < w; x++, rgb += 3, raw += step) {
+			int a = raw[3 * o];
+			if (a == 255) {
+				rgb[0] = raw[0];
+				rgb[1] = raw[o];
+				rgb[2] = raw[2 * o];
+			} else {
+				rgb[0] = on_white(raw[0], a);
+				rgb[1] = on_white(raw[o], a);
+				rgb[2] = on_white(raw[2 * o], a);
+			}
 		}
-		}
-		if (a != 255) { // onto white
-			r = (r * a + 255 * (255 - a)) / 255;
-			g = (g * a + 255 * (255 - a)) / 255;
-			b = (b * a + 255 * (255 - a)) / 255;
-		}
-		rgb[x * 3] = (uint8_t)r;
-		rgb[x * 3 + 1] = (uint8_t)g;
-		rgb[x * 3 + 2] = (uint8_t)b;
+		break;
+	}
 	}
 }
 
@@ -197,17 +229,12 @@ static bool unfilter(uint8_t *row, const uint8_t *prev, int bytes, int bpp, int 
 	case 1: for (int i = bpp; i < bytes; i++) row[i] = (uint8_t)(row[i] + row[i - bpp]); break;
 	case 2: for (int i = 0; i < bytes; i++) row[i] = (uint8_t)(row[i] + prev[i]); break;
 	case 3:
-		for (int i = 0; i < bytes; i++) {
-			int left = i >= bpp ? row[i - bpp] : 0;
-			row[i] = (uint8_t)(row[i] + ((left + prev[i]) >> 1));
-		}
+		for (int i = 0; i < bpp && i < bytes; i++) row[i] = (uint8_t)(row[i] + (prev[i] >> 1)); // nothing to the left
+		for (int i = bpp; i < bytes; i++) row[i] = (uint8_t)(row[i] + ((row[i - bpp] + prev[i]) >> 1));
 		break;
 	case 4:
-		for (int i = 0; i < bytes; i++) {
-			int left = i >= bpp ? row[i - bpp] : 0;
-			int ul = i >= bpp ? prev[i - bpp] : 0;
-			row[i] = (uint8_t)(row[i] + paeth(left, prev[i], ul));
-		}
+		for (int i = 0; i < bpp && i < bytes; i++) row[i] = (uint8_t)(row[i] + prev[i]); // paeth(0, b, 0) is b
+		for (int i = bpp; i < bytes; i++) row[i] = (uint8_t)(row[i] + paeth(row[i - bpp], prev[i], prev[i - bpp]));
 		break;
 	default: return false;
 	}
@@ -292,10 +319,10 @@ DecResult png_decode(ImageReadFn read, void *read_user, const ImageInfo *info, c
 	if (h.ctype == 3 && h.palette_count == 0) goto done;
 
 	// The two byte zlib header comes first in the compressed data.
-	if (s->chunk_left < 2) goto done;
-	if (src_byte(s) < 0 || src_byte(s) < 0) goto done;
-	s->chunk_left -= 2;
+	// (Read like the data, so that it may be spread over two chunks: found by tpn.c, decision 114.)
+	uint8_t zlib_header[2];
 	s->zlib_header_done = true;
+	if (idat_read(s, zlib_header, 2) != 2) goto done;
 
 	z = malloc(sizeof *z);
 	int max_row = row_bytes(&h, h.width) + 1;

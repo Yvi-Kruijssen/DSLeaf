@@ -32,12 +32,16 @@ typedef struct {
 
 	int src_w, src_h, dst_w, dst_h;
 	uint32_t *acc;            // dst_w * 3 sums of the current output row
-	uint16_t *col;            // output column of each picture column
 	uint16_t *col_count;      // picture columns in each output column
 	uint8_t *line;
 	int cur;                  // output row being summed, -1 for none
 	int rows_in;              // picture rows summed into it
 	int stopped;
+	int last_y;               // the picture row given last, and what is left of last_y * dst_h / src_h: the next
+	int last_rem;             // row's output row follows from them without a division (decision 114)
+	uint32_t inv_n[4];        // the last few numbers of pixels in a sum, and 2^32 divided by each (see flush)
+	uint64_t inv[4];
+	int inv_next;
 } PicSink;
 
 // Sets `out` up as an ImageSink that feeds `ps`. The sink frees its memory in picsink_close.

@@ -52,6 +52,10 @@ typedef struct {
 	int windows_chapter;
 	bool pages_changed;             // chapter_pages has new entries since the caller last cleared this
 	uint32_t total_bytes;
+
+	int lead_for;                   // the chapter (plus 1, 0 for none) whose following chapter was looked at for a picture
+	bool lead_found;                // at its start (reader_next_picture, decision 115), and that picture
+	CtImage lead;
 } Reader;
 
 // Page size for a font: the grid minus `margin` columns on each side, and minus
@@ -182,6 +186,12 @@ int reader_export_pages(const Reader *r, uint16_t *out, int cap);
 
 // Takes saved counts (for the same layout) for the chapters that are not known yet. Returns how many were taken.
 int reader_import_pages(Reader *r, const uint16_t *pages, int count);
+
+// The next picture that gets a page after the pages shown: in the part of the chapter that is in memory, or, when the
+// last page of the chapter is shown, the picture the following chapter starts with. NULL if there is none. It is
+// decoded ahead of time while the reader is idle (picture_prefetch, decision 115). Looking at the following chapter
+// reads its first bytes, once for each chapter (the answer is kept).
+const CtImage *reader_next_picture(Reader *r);
 
 // ---- Drawing (reader_view.c, needs the DS) ----
 #include "render.h"

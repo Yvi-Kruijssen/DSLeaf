@@ -26,9 +26,16 @@ bool zip_open(Zip *zip, const char *path) {
 	if (!zip->file) return false;
 
 	uint8_t *tail = NULL;
-	if (fseek(zip->file, 0, SEEK_END) != 0) goto fail;
-	long size = ftell(zip->file);
+	// The size comes from the directory of the card when it can: a seek to the end of the file makes the card's file
+	// system walk the whole chain of the file's clusters, and the seek back to the last 64 KB walks it again
+	// (a tenth of the time of opening a 25 MB book on the emulated DS, decision 116).
+	long size = storage_file_size(path);
+	if (size < 0) {
+		if (fseek(zip->file, 0, SEEK_END) != 0) goto fail;
+		size = ftell(zip->file);
+	}
 	if (size < EOCD_SIZE) goto fail;
+	zip->size = (uint32_t)size;
 
 	// The end-of-directory record is at the very end, followed only by an
 	// optional comment of up to 64 KB. Read that last part once and search it.
@@ -86,6 +93,17 @@ void zip_iter_start(const Zip *zip, ZipIter *iter) {
 	iter->index = 0;
 }
 
+// The name of the entry at the iterator equals `name`: looked at in the directory in memory without copying the entry.
+// -1 when that cannot be told this way (no directory in memory, or the place is not an entry).
+static int name_matches(const Zip *zip, const ZipIter *iter, const char *name, size_t name_len) {
+	if (!zip->dir || iter->pos < zip->dir_offset || iter->pos + 46 > zip->dir_offset + zip->dir_size) return -1;
+	const uint8_t *h = zip->dir + (iter->pos - zip->dir_offset);
+	if (le32(h) != CDIR_SIG) return -1;
+	uint16_t len = le16(h + 28);
+	if (iter->pos + 46 + len > zip->dir_offset + zip->dir_size) return -1;
+	return len == name_len && memcmp(h + 46, name, name_len) == 0;
+}
+
 bool zip_iter_next(Zip *zip, ZipIter *iter, ZipEntry *entry) {
 	while (iter->index < zip->entry_count) {
 		uint8_t hbuf[46];
@@ -118,13 +136,47 @@ bool zip_iter_next(Zip *zip, ZipIter *iter, ZipEntry *entry) {
 	return false;
 }
 
-bool zip_find(Zip *zip, const char *name, ZipEntry *entry) {
-	ZipIter it;
-	zip_iter_start(zip, &it);
-	while (zip_iter_next(zip, &it, entry)) {
+// Looks for `name` among the entries from the iterator up to entry number `stop`. With the directory in memory the
+// names are compared in place and only the entry that is wanted is copied.
+static bool find_in(Zip *zip, ZipIter *it, uint16_t stop, const char *name, size_t name_len, ZipEntry *entry) {
+	while (it->index < stop) {
+		if (name_matches(zip, it, name, name_len) == 0) { // another name: step over the entry
+			const uint8_t *h = zip->dir + (it->pos - zip->dir_offset);
+			it->pos += 46u + le16(h + 28) + le16(h + 30) + le16(h + 32);
+			it->index++;
+			continue;
+		}
+		if (!zip_iter_next(zip, it, entry)) return false; // (it checks the entry, and skips names that are too long)
 		if (strcmp(entry->name, name) == 0) return true;
 	}
 	return false;
+}
+
+bool zip_find(Zip *zip, const char *name, ZipEntry *entry) {
+	// From the entry after the one found last to the end, then from the start up to there. Opening a book looks up
+	// every chapter, and they are nearly always in the order of the archive: each was a walk from the start before,
+	// which grows with the square of the number of files (decision 116). (Of two entries with the same name, which no
+	// proper archive has, the one that is met first this way is found.)
+	size_t name_len = strlen(name);
+	ZipIter it;
+	uint16_t from = zip->find_index;
+	bool found = false;
+	if (from > 0 && from < zip->entry_count) {
+		it.pos = zip->find_pos;
+		it.index = from;
+		found = find_in(zip, &it, zip->entry_count, name, name_len, entry);
+	} else {
+		from = zip->entry_count;
+	}
+	if (!found) {
+		zip_iter_start(zip, &it);
+		found = find_in(zip, &it, from, name, name_len, entry);
+	}
+	if (found) {
+		zip->find_pos = it.pos;
+		zip->find_index = it.index;
+	}
+	return found;
 }
 
 static size_t source_read(void *user, uint8_t *buf, size_t cap) {

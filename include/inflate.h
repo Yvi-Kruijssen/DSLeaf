@@ -26,14 +26,12 @@ typedef struct {
 	InflateReadFn read;
 	void *user;
 
-	uint8_t inbuf[4096]; // read from the card in pieces of this size (512 made a read and a seek for every sector)
 	size_t in_pos, in_len;
 	bool in_eof;
 
 	uint32_t bitbuf;
 	int bitcnt;
 
-	uint8_t window[INFLATE_WINDOW];
 	uint32_t wpos;
 	uint32_t total; // bytes produced so far
 
@@ -42,6 +40,9 @@ typedef struct {
 	uint32_t stored_left;
 	int pending_len, pending_dist; // a match that did not fit in the caller's buffer
 
+	// The big parts come last: inflate_init clears only what is above (decision 116).
+	uint8_t inbuf[4096]; // read from the card in pieces of this size (512 made a read and a seek for every sector)
+	uint8_t window[INFLATE_WINDOW];
 	uint16_t lcount[16], lsym[288]; // literal and length codes
 	uint16_t dcount[16], dsym[30];  // distance codes
 	uint16_t lfast[1 << INFLATE_LIT_BITS];   // the codes of up to that many bits: (symbol << 4) | length, 0 for a longer one

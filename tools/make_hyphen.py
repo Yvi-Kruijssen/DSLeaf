@@ -3,8 +3,11 @@
 
     python3 -I tools/make_hyphen.py third_party/hyphen/hyph-en-us.tex source/hyph_en.c
 
-The file holds the patterns of Liang's algorithm (as TeX writes them: letters with digits between them, "." for a word
-boundary) sorted by their letters, and the exceptions (words with their hyphens given), sorted.
+The file holds the patterns of Liang's algorithm as a trie (decision 114) and the exceptions (words with their hyphens
+given), sorted. The trie: node 0 is the root, the children of a node follow each other in the node list sorted by their
+letter ("." is a word boundary), `hyph_first[i]` is the first child of node i (so node i has hyph_first[i + 1] -
+hyph_first[i] children), `hyph_char[i]` its letter and `hyph_value[i]` where the numbers of the pattern that ends at the
+node start in `hyph_digits` (0 if no pattern ends there): one number for each place before, between and after its letters.
 """
 import re
 import sys
@@ -32,18 +35,63 @@ def main():
     letters = lambda p: re.sub(r"[0-9]", "", p)
     pats.sort(key=letters)
     exc.sort(key=lambda w: w.replace("-", ""))
-    maxlen = max(len(letters(p)) for p in pats)
+    # The trie, breadth first, so that the children of a node are next to each other.
+    def digits(p):  # the number before each letter and after the last one
+        out, pending = [], 0
+        for ch in p:
+            if ch.isdigit():
+                pending = int(ch)
+            else:
+                out.append(pending)
+                pending = 0
+        out.append(pending)
+        return bytes(out)
+    root = {}
+    for p in pats:
+        node = root
+        for ch in letters(p):
+            node = node.setdefault(ch, {})
+        node[""] = digits(p)
+    chars, first, value, pool, seen = [0], [], [], bytearray(b"\0"), {}
+    queue = [root]
+    i = 0
+    while i < len(queue):
+        node = queue[i]
+        i += 1
+        first.append(len(queue))
+        d = node.get("")
+        if d is None:
+            value.append(0)
+        else:
+            if d not in seen:
+                at = pool.find(d, 1)  # the same numbers anywhere in the pool will do
+                if at < 0:
+                    at = len(pool)
+                    pool += d
+                seen[d] = at
+            value.append(seen[d])
+        for ch in sorted(k for k in node if k):
+            chars.append(ord(ch))
+            queue.append(node[ch])
+    first.append(len(queue))
+    assert len(queue) < 65536 and len(pool) < 65536
+    def table(ctype, name, values, per):
+        out.append("const %s %s[%d] = {" % (ctype, name, len(values)))
+        for k in range(0, len(values), per):
+            out.append("\t" + ", ".join(str(v) for v in values[k:k + per]) + ",")
+        out.append("};")
     out = [NOTICE, '#include "hyphen.h"\n']
-    out.append("const int hyph_max_pattern = %d;\n" % maxlen)
-    out.append("const char *const hyph_patterns[%d] = {" % len(pats))
-    for i in range(0, len(pats), 8):
-        out.append("\t" + ", ".join('"%s"' % p for p in pats[i:i + 8]) + ",")
-    out.append("};\nconst int hyph_pattern_count = %d;\n" % len(pats))
+    out.append("const int hyph_node_count = %d;" % len(queue))
+    table("uint8_t", "hyph_char", chars, 24)
+    table("uint16_t", "hyph_first", first, 16)
+    table("uint16_t", "hyph_value", value, 16)
+    table("uint8_t", "hyph_digits", list(pool), 32)
+    out.append("")
     out.append("const char *const hyph_exceptions[%d] = {" % len(exc))
     for i in range(0, len(exc), 8):
         out.append("\t" + ", ".join('"%s"' % w for w in exc[i:i + 8]) + ",")
     out.append("};\nconst int hyph_exception_count = %d;" % len(exc))
     open(sys.argv[2], "w").write("\n".join(out) + "\n")
-    print(len(pats), "patterns,", len(exc), "exceptions, longest pattern", maxlen)
+    print(len(pats), "patterns,", len(queue), "nodes,", len(pool), "bytes of numbers,", len(exc), "exceptions")
 
 main()

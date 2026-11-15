@@ -16,6 +16,7 @@
 #include "message_box.h"
 #include "pagecache.h"
 #include "page_menu.h"
+#include "picture.h"
 #include "popup.h"
 #include "preview.h"
 #include "reader.h"
@@ -54,8 +55,12 @@ static int toc_here;     // the entry the reader is in, or -1
 
 // Counting the pages of the rest of the book while the reader is idle (decision 055).
 #define COUNT_AFTER_FRAMES 90  // idle frames (1.5 s) before a counting step
-#define COUNT_GAP_FRAMES 6     // idle frames between two steps (a step is short, decision 113)
+// Once counting has begun there is a step in every frame, and another one in the same frame while less than this many
+// screen lines have gone by since the frame began (a line is 64 microseconds; decision 116). The keys are looked at
+// once a frame, so a step has to stay short (decision 113).
+#define COUNT_CHAIN_LINES 70
 #define SAVE_COUNTS_FRAMES 300 // idle frames (5 s) before new counts are saved
+#define PREFETCH_AFTER_FRAMES 15 // idle frames (0.25 s) before the next picture is decoded ahead of time (decision 115)
 static int idle_frames;
 static bool counting_done;     // every chapter is known, or counting is not possible
 static uint16_t page_counts[PAGECACHE_CHAPTERS_MAX];
@@ -193,8 +198,11 @@ static bool open_book(const char *path) {
 	if (dual_screen()) hide_top_logo(); // the top screen shows the second page
 	render_set_view(&reading_font, config.rotate); // also clears both screens. Menus are never rotated (decision 049)
 
+	// Reopening the book that is first in Recent Reads changes nothing: the list is not written to the card again,
+	// which is the slowest single thing of opening a book there (decision 116).
+	bool already_first = recent.count > 0 && strcmp(recent.path[0], path) == 0 && !save_failed;
 	recent_touch(&recent, path);
-	save_recent();
+	if (!already_first) save_recent();
 	rebuild_menu();
 
 	current = SCREEN_READER;
@@ -565,6 +573,29 @@ static volatile int vblanks; // frames since the program started, counted in the
 
 static void count_vblank(void) { vblanks++; }
 
+// Screen lines since the vertical blank began (a frame is 263 lines, and the blank starts at line 192).
+static int lines_into_frame(void) {
+	return (REG_VCOUNT + 263 - 192) % 263;
+}
+
+// A key or the touchscreen is down right now (asked while a picture is decoded ahead of time, to stop that). It does
+// not disturb what input_update sees: the press is still new to it in the next frame.
+static bool key_is_down(void *user) {
+	(void)user;
+	return (keysCurrent() & (KEY_TOUCH | KEY_X | KEY_Y | 0x03FF)) != 0;
+}
+
+// Decodes the next picture into the picture cache while the reader is idle, so that its page comes up at once
+// (decision 115). Does nothing when there is no next picture or it is in the cache already.
+static void prefetch_picture(void) {
+	if (key_is_down(NULL)) return; // (a key that is held and does nothing here would start it again in every frame)
+	const CtImage *next = reader_next_picture(&reader);
+	if (!next) return;
+	int x, y, w, h;
+	render_picture_area(&x, &y, &w, &h);
+	picture_prefetch(&reader.book, next, w, h, key_is_down, NULL);
+}
+
 int main(void) {
 	render_init();
 	font_load_default(&ui_font);
@@ -661,10 +692,14 @@ int main(void) {
 				// The page was shown before its whole window was read: finish that first (decision 111).
 			} else {
 				idle_frames++;
+				if (idle_frames >= PREFETCH_AFTER_FRAMES) prefetch_picture();
 				if (!counting_done && idle_frames >= COUNT_AFTER_FRAMES) {
 					bool was_exact = reader_book_pages_exact(&reader);
-					counting_done = !reader_count_step(&reader);
-					idle_frames = COUNT_AFTER_FRAMES - COUNT_GAP_FRAMES;
+					int frame = vblanks;
+					do {
+						counting_done = !reader_count_step(&reader);
+					} while (!counting_done && vblanks == frame && lines_into_frame() < COUNT_CHAIN_LINES && !key_is_down(NULL));
+					idle_frames = COUNT_AFTER_FRAMES; // the next frame counts again; the counts are saved when all are known
 					if (reader_book_pages_exact(&reader) != was_exact) reader.redraw = true; // "calculating..." becomes the page count
 				}
 				if (idle_frames >= SAVE_COUNTS_FRAMES || (counting_done && reader.pages_changed && idle_frames >= COUNT_AFTER_FRAMES)) save_page_counts();
