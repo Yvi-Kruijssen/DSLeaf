@@ -3,6 +3,6 @@
 #ifndef DSLEAF_VERSION_H
 #define DSLEAF_VERSION_H
 
-#define DSLEAF_VERSION "0.8.0"
+#define DSLEAF_VERSION "1.0.0"
 
 #endif
